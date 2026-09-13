@@ -46,6 +46,18 @@ describe('admin-summary', () => {
     const body = await (await summary(new Request('https://x/api/admin-summary', { headers: { cookie } }))).json();
     expect(body.signed_in).toBeNull();
   });
+  it('signed_in is null and the Worker is never called when CT_STATS_TOKEN is unset', async () => {
+    delete process.env.CT_STATS_TOKEN;
+    const body = await (await summary(new Request('https://x/api/admin-summary', { headers: { cookie } }))).json();
+    expect(body.signed_in).toBeNull();
+    expect(calls.length).toBe(1);
+  });
+  it('502s with bad_upstream_response when the upstream body is not JSON', async () => {
+    fetch.mockImplementation(async () => new Response('not json', { status: 200 }));
+    const r = await summary(new Request('https://x/api/admin-summary', { headers: { cookie } }));
+    expect(r.status).toBe(502);
+    expect((await r.json()).error).toBe('bad_upstream_response');
+  });
 });
 
 describe('admin-users and admin-user', () => {
@@ -57,5 +69,18 @@ describe('admin-users and admin-user', () => {
     expect((await user(new Request('https://x/api/admin-user?id=nope', { headers: { cookie } }))).status).toBe(400);
     await user(new Request('https://x/api/admin-user?id=6f1c2a3e-1111-4222-8333-444455556666', { headers: { cookie } }));
     expect(calls[0][0]).toBe(`${API}/api/admin/users/6f1c2a3e-1111-4222-8333-444455556666`);
+  });
+  it('passes through a non-2xx upstream response with its body and cache-control', async () => {
+    fetch.mockImplementation(async () => Response.json({ error: 'boom' }, { status: 500 }));
+    const r = await users(new Request('https://x/api/admin-users', { headers: { cookie } }));
+    expect(r.status).toBe(500);
+    expect(r.headers.get('cache-control')).toBe('no-store');
+    expect(await r.json()).toEqual({ error: 'boom' });
+  });
+  it('502s with upstream_unreachable when fetch rejects', async () => {
+    fetch.mockImplementation(async () => { throw new Error('network down'); });
+    const r = await user(new Request('https://x/api/admin-user?id=6f1c2a3e-1111-4222-8333-444455556666', { headers: { cookie } }));
+    expect(r.status).toBe(502);
+    expect((await r.json()).error).toBe('upstream_unreachable');
   });
 });

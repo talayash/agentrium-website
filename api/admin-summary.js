@@ -8,7 +8,12 @@ export default async function handler(request) {
   if (denied) return denied;
   if (!upstream.ok) return passThrough(upstream);
 
-  const summary = await upstream.json();
+  let summary;
+  try {
+    summary = await upstream.json();
+  } catch {
+    return jsonResponse({ error: 'bad_upstream_response' }, 502);
+  }
   const ids = Array.isArray(summary.active_installation_ids) ? summary.active_installation_ids : [];
   delete summary.active_installation_ids;
 
