@@ -37,6 +37,20 @@ describe('POST /api/admin-login', () => {
   it('400 on a body without a string password', async () => {
     expect((await login(post({}))).status).toBe(400);
   });
+  it('400 invalid_payload when the password is longer than 512 chars', async () => {
+    const r = await login(post({ password: 'x'.repeat(513) }));
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toBe('invalid_payload');
+  });
+  it('400 invalid_json on a malformed request body', async () => {
+    const r = await login(new Request('https://x/api/admin-login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9, 10.0.0.1' },
+      body: '{',
+    }));
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toBe('invalid_json');
+  });
   it('429 with Retry-After when the limiter denies, before checking the password', async () => {
     limiter.mockResolvedValue(new Response(JSON.stringify({ allowed: false, retry_after_seconds: 612 }), { status: 200 }));
     const r = await login(post({ password: 'correct horse' }));
@@ -47,9 +61,21 @@ describe('POST /api/admin-login', () => {
     limiter.mockRejectedValue(new Error('boom'));
     expect((await login(post({ password: 'correct horse' }))).status).toBe(503);
   });
+  it('503 rate_limiter_unavailable when the limiter responds non-2xx, and no cookie set', async () => {
+    limiter.mockResolvedValue(new Response('x', { status: 500 }));
+    const r = await login(post({ password: 'correct horse' }));
+    expect(r.status).toBe(503);
+    expect((await r.json()).error).toBe('rate_limiter_unavailable');
+    expect(r.headers.get('set-cookie')).toBeNull();
+  });
   it('500 when ADMIN_PASSWORD is unset', async () => {
     delete process.env.ADMIN_PASSWORD;
     expect((await login(post({ password: 'x' }))).status).toBe(500);
+  });
+  it('405 method_not_allowed on a non-POST request', async () => {
+    const r = await login(new Request('https://x/api/admin-login', { method: 'GET' }));
+    expect(r.status).toBe(405);
+    expect((await r.json()).error).toBe('method_not_allowed');
   });
 });
 
@@ -64,5 +90,16 @@ describe('GET /api/admin-session and POST /api/admin-logout', () => {
     const r = await logout(new Request('https://x/api/admin-logout', { method: 'POST' }));
     expect(r.status).toBe(204);
     expect(r.headers.get('set-cookie')).toContain('Max-Age=0');
+  });
+  it('405 method_not_allowed on a non-GET request to admin-session', async () => {
+    const r = await session(new Request('https://x/api/admin-session', { method: 'POST' }));
+    expect(r.status).toBe(405);
+    expect((await r.json()).error).toBe('method_not_allowed');
+  });
+  it('405 method_not_allowed on a non-POST request to admin-logout, and no cookie set', async () => {
+    const r = await logout(new Request('https://x/api/admin-logout', { method: 'GET' }));
+    expect(r.status).toBe(405);
+    expect((await r.json()).error).toBe('method_not_allowed');
+    expect(r.headers.get('set-cookie')).toBeNull();
   });
 });
