@@ -1,0 +1,142 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Admin - Agentrium" description="Internal admin dashboard - private.">
+  <Fragment slot="head">
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+  </Fragment>
+
+  <!-- Login card: the only thing rendered until /api/admin-session says 204 -->
+  <main id="login" class="admin-canvas min-h-screen flex items-center justify-center px-4">
+    <form id="login-form" class="admin-card w-full max-w-sm p-8 space-y-5">
+      <div class="flex items-center gap-3">
+        <img src="/icons/icon.png" alt="" class="w-9 h-9 rounded-xl" />
+        <div>
+          <div class="text-lg font-semibold text-[var(--night-text)]">Agentrium Admin</div>
+          <div class="text-xs text-[var(--night-text-3)]">/admin</div>
+        </div>
+      </div>
+      <label class="block">
+        <span class="text-xs uppercase tracking-wider text-[var(--night-text-3)]">Password</span>
+        <input id="login-password" type="password" autocomplete="current-password" required
+               class="admin-input mt-1.5 w-full" />
+      </label>
+      <button type="submit" class="admin-btn-primary w-full">Sign in</button>
+      <p id="login-error" class="text-sm text-[#FF453A] min-h-5" role="alert"></p>
+    </form>
+  </main>
+
+  <!-- Dashboard shell -->
+  <main id="app" class="admin-canvas min-h-screen pb-16" hidden>
+    <header class="admin-topbar">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-3">
+        <img src="/icons/icon.png" alt="" class="w-6 h-6 rounded-lg" />
+        <span class="font-semibold text-[var(--night-text)]">Admin</span>
+        <span class="text-xs text-[var(--night-text-3)]">/admin</span>
+        <span class="flex-1"></span>
+        <span id="live-pill" class="admin-pill admin-pill-live"><span id="live-count">-</span> active now</span>
+        <span id="refreshed-pill" class="admin-pill hidden sm:inline-flex">-</span>
+        <button id="refresh-btn" type="button" class="admin-btn">Refresh</button>
+        <button id="logout-btn" type="button" class="admin-btn">Log out</button>
+      </div>
+      <nav class="admin-tabs" aria-label="Sections">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-1 overflow-x-auto">
+          <a href="#overview" data-tab="overview" class="admin-tab">Overview</a>
+          <a href="#users" data-tab="users" class="admin-tab">Users</a>
+          <a href="#telemetry" data-tab="telemetry" class="admin-tab">Telemetry</a>
+          <a href="#errors" data-tab="errors" class="admin-tab">Errors <span data-badge="errors" class="admin-badge admin-badge-err" hidden>0</span></a>
+          <a href="#inbox" data-tab="inbox" class="admin-tab">Inbox <span data-badge="inbox" class="admin-badge" hidden>0</span></a>
+        </div>
+      </nav>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <section id="panel-overview" data-panel="overview" hidden></section>
+      <section id="panel-users" data-panel="users" hidden></section>
+      <section id="panel-telemetry" data-panel="telemetry" hidden></section>
+      <section id="panel-errors" data-panel="errors" hidden></section>
+      <section id="panel-inbox" data-panel="inbox" hidden></section>
+    </div>
+    <p class="mt-10 text-center text-xs text-[var(--night-text-3)]">live 15s · history 5 min · inbox 60s</p>
+  </main>
+
+  <script>
+    import { parseTab, tabHash, TABS, type Tab } from '../lib/admin/tabs';
+    import { checkSession, login, logout } from '../lib/admin/session';
+    import { $ } from '../lib/admin/dom';
+    import * as overview from '../lib/admin/panels/overview';
+    import * as users from '../lib/admin/panels/users';
+    import * as telemetry from '../lib/admin/panels/telemetry';
+    import * as errors from '../lib/admin/panels/errors';
+    import * as inbox from '../lib/admin/panels/inbox';
+
+    const panels: Record<Tab, typeof overview> = { overview, users, telemetry, errors, inbox };
+    let active: Tab | null = null;
+    let badgePollers: Array<{ stop(): void }> = [];
+
+    function setBadge(name: 'errors' | 'inbox', n: number) {
+      const b = document.querySelector<HTMLElement>(`[data-badge="${name}"]`);
+      if (!b) return;
+      b.textContent = String(n);
+      b.hidden = n <= 0;
+    }
+
+    function showTab(tab: Tab) {
+      if (active === tab) return;
+      if (active) panels[active].deactivate();
+      for (const t of TABS) {
+        $(`panel-${t}`).hidden = t !== tab;
+        document.querySelector(`[data-tab="${t}"]`)?.classList.toggle('is-active', t === tab);
+      }
+      active = tab;
+      panels[tab].activate();
+    }
+
+    function onUnauthorized() {
+      // Stop every poll first, otherwise they keep firing 401s behind the card.
+      for (const t of TABS) panels[t].deactivate();
+      for (const p of badgePollers) p.stop();
+      badgePollers = [];
+      active = null;
+      $('app').hidden = true;
+      $('login').hidden = false;
+      $('login-error').textContent = 'Session expired, sign in again.';
+    }
+
+    async function boot() {
+      if (!(await checkSession())) return;
+      $('login').hidden = true;
+      $('app').hidden = false;
+      const ctx = {
+        onUnauthorized,
+        setLive: (n: string) => { $('live-count').textContent = n; },
+        setRefreshed: (s: string) => { $('refreshed-pill').textContent = s; },
+        setBadge,
+      };
+      for (const t of TABS) panels[t].mount($(`panel-${t}`), ctx);
+      showTab(parseTab(location.hash));
+      window.addEventListener('hashchange', () => showTab(parseTab(location.hash)));
+      $('refresh-btn').addEventListener('click', () => { if (active) panels[active].refresh(); });
+      $('logout-btn').addEventListener('click', async () => { await logout(); location.reload(); });
+      // Badges come from the two cheapest endpoints, independent of the active tab.
+      badgePollers = [errors.pollBadge(ctx), inbox.pollBadge(ctx)];
+    }
+
+    $('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = $('login-error');
+      err.textContent = '';
+      const pw = ($('login-password') as HTMLInputElement).value;
+      const r = await login(pw);
+      if (r.ok) { location.hash = location.hash || tabHash('overview'); location.reload(); return; }
+      err.textContent =
+        r.status === 401 ? 'Wrong password.'
+        : r.status === 429 ? `Too many attempts. Try again in ${Math.ceil((r.retryAfter ?? 900) / 60)} minutes.`
+        : r.status === 503 ? 'Rate limiter unavailable, try again shortly.'
+        : 'Server misconfigured.';
+    });
+
+    boot();
+  </script>
+</Layout>
