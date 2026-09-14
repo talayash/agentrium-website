@@ -10,7 +10,6 @@ import {
   countryFlag,
   countryName,
   distinctCount,
-  escapeHtml,
   formatNumber,
   osIcon,
   osLabel,
@@ -196,14 +195,33 @@ let livePoller: Poller | null = null;
 let historyPoller: Poller | null = null;
 
 // -- Status pill -------------------------------------------------------------
+//
+// Live+today and history are fetched by separate pollers on separate
+// schedules, so each keeps its own last-failure list and the pill renders
+// the union (mirrors overview.ts, which was fixed for the same all-or-nothing
+// defect).
 
-function setStatus(state: 'ok' | 'error' | 'loading' | 'idle', detail: string): void {
+function setStatus(detail: string): void {
   const pill = $('tel-status');
-  pill.style.color =
-    state === 'ok' ? 'var(--night-text)'
-    : state === 'error' ? '#FF453A'
-    : 'var(--night-text-3)';
+  pill.style.color = 'var(--night-text-3)';
   pill.textContent = detail;
+}
+
+const lastFailures: Record<'live' | 'history', string[]> = { live: [], history: [] };
+
+function describe(source: string, reason: unknown): string {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  return `${source} ${msg}`;
+}
+
+function reportStatus(group: 'live' | 'history', failures: string[], anySuccess: boolean): void {
+  lastFailures[group] = failures;
+  const all = [...lastFailures.live, ...lastFailures.history];
+  const pill = $('tel-status');
+  const at = new Date().toLocaleTimeString();
+  if (anySuccess) ctx.setRefreshed(at);
+  pill.style.color = all.length > 0 ? '#FF453A' : 'var(--night-text)';
+  pill.textContent = all.length > 0 ? `error: ${all.join(' · ')}` : `ok · ${at}`;
 }
 
 // -- Live + today ------------------------------------------------------------
@@ -218,24 +236,24 @@ function renderToday(data: TodayStats): void {
   $('kpi-installs').textContent = formatNumber(data.total_installations);
   $('tel-last-updated').textContent = new Date().toLocaleString();
 
-  // Distribution labels reach renderDistribution as HTML, so every
-  // server-supplied value is escaped here before it goes in.
+  // renderBar (the sink renderDistribution delegates to) escapes label and
+  // subLabel itself, so the server-supplied values pass through as raw text.
   $('count-versions').textContent = String(
     renderDistribution($('dist-versions'), data.version_distribution, (v) => ({
-      label: `v${escapeHtml(v)}`,
+      label: `v${v}`,
       sub: '',
     })),
   );
   $('count-os').textContent = String(
     renderDistribution($('dist-os'), data.os_distribution, (os) => ({
-      label: `${osIcon(os)} ${escapeHtml(osLabel(os))}`,
+      label: `${osIcon(os)} ${osLabel(os)}`,
       sub: '',
     })),
   );
   $('count-countries').textContent = String(
     renderDistribution($('dist-countries'), data.country_distribution, (code) => ({
-      label: `${countryFlag(code)} ${escapeHtml(countryName(code))}`,
-      sub: escapeHtml(code),
+      label: `${countryFlag(code)} ${countryName(code)}`,
+      sub: code,
     })),
   );
 
@@ -259,67 +277,84 @@ function renderLive(data: LiveStats): void {
 }
 
 async function fetchLiveAndToday(): Promise<void> {
-  setStatus('loading', 'fetching…');
-  try {
-    const [stats, live] = await Promise.all([
-      getJson<TodayStats>('/api/stats', ctx.onUnauthorized),
-      getJson<LiveStats>('/api/stats-live', ctx.onUnauthorized),
-    ]);
-    renderToday(stats);
-    renderLive(live);
-    const at = new Date().toLocaleTimeString();
-    setStatus('ok', `ok · ${at}`);
-    ctx.setRefreshed(at);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus('error', `error: ${msg}`);
-    // A failed poll keeps the last good render; only a cold panel gets the
-    // error state painted into the distribution columns.
-    if ($('raw-payload').textContent === '-') {
-      $('dist-versions').replaceChildren(errorState('Failed to load'));
-      $('dist-os').replaceChildren(errorState('Failed to load'));
-      $('dist-countries').replaceChildren(errorState('Failed to load'));
-    }
+  setStatus('fetching…');
+  const [statsR, liveR] = await Promise.allSettled([
+    getJson<TodayStats>('/api/stats', ctx.onUnauthorized),
+    getJson<LiveStats>('/api/stats-live', ctx.onUnauthorized),
+  ]);
+  const failures: string[] = [];
+
+  if (statsR.status === 'fulfilled') {
+    renderToday(statsR.value);
+  } else {
+    failures.push(describe('stats', statsR.reason));
   }
+
+  if (liveR.status === 'fulfilled') {
+    renderLive(liveR.value);
+  } else {
+    failures.push(describe('stats-live', liveR.reason));
+  }
+
+  // A failed poll keeps the last good render; only a cold panel (nothing
+  // rendered yet) gets the error state painted into the distribution columns.
+  if (failures.length > 0 && $('raw-payload').textContent === '-') {
+    $('dist-versions').replaceChildren(errorState('Failed to load'));
+    $('dist-os').replaceChildren(errorState('Failed to load'));
+    $('dist-countries').replaceChildren(errorState('Failed to load'));
+  }
+
+  reportStatus('live', failures, failures.length < 2);
 }
 
 // -- History -----------------------------------------------------------------
 
 async function fetchHistory(): Promise<void> {
-  try {
-    const base = '/api/stats-history';
-    const [dau, hb, ver] = await Promise.all([
-      getJson<Series<LineAreaPoint>>(`${base}?metric=dau&days=${HISTORY_DAYS}`, ctx.onUnauthorized),
-      getJson<Series<LineAreaPoint>>(`${base}?metric=heartbeats&days=${HISTORY_DAYS}`, ctx.onUnauthorized),
-      getJson<Series<StackedAreaPoint>>(`${base}?metric=version&days=${HISTORY_DAYS}`, ctx.onUnauthorized),
-    ]);
+  const base = '/api/stats-history';
+  const [dauR, hbR, verR] = await Promise.allSettled([
+    getJson<Series<LineAreaPoint>>(`${base}?metric=dau&days=${HISTORY_DAYS}`, ctx.onUnauthorized),
+    getJson<Series<LineAreaPoint>>(`${base}?metric=heartbeats&days=${HISTORY_DAYS}`, ctx.onUnauthorized),
+    getJson<Series<StackedAreaPoint>>(`${base}?metric=version&days=${HISTORY_DAYS}`, ctx.onUnauthorized),
+  ]);
+  const failures: string[] = [];
+  let anySuccess = false;
 
-    const dauMeta = renderLineArea($('chart-dau') as unknown as SVGElement, dau.series ?? [], '#0A84FF');
+  if (dauR.status === 'fulfilled') {
+    const dauMeta = renderLineArea($('chart-dau') as unknown as SVGElement, dauR.value.series ?? [], '#0A84FF');
     $('chart-dau-peak').textContent = `peak ${formatNumber(dauMeta.max)}`;
     $('chart-dau-from').textContent = dauMeta.from;
     $('chart-dau-to').textContent = dauMeta.to;
+    anySuccess = true;
+  } else {
+    failures.push(describe('stats-history dau', dauR.reason));
+  }
 
-    const hbMeta = renderLineArea($('chart-hb') as unknown as SVGElement, hb.series ?? [], '#7A5BFF');
+  if (hbR.status === 'fulfilled') {
+    const hbMeta = renderLineArea($('chart-hb') as unknown as SVGElement, hbR.value.series ?? [], '#7A5BFF');
     $('chart-hb-peak').textContent = `peak ${formatNumber(hbMeta.max)}`;
     $('chart-hb-from').textContent = hbMeta.from;
     $('chart-hb-to').textContent = hbMeta.to;
+    anySuccess = true;
+  } else {
+    failures.push(describe('stats-history heartbeats', hbR.reason));
+  }
 
+  if (verR.status === 'fulfilled') {
     const verMeta = renderStackedArea(
       $('chart-versions') as unknown as SVGElement,
       $('chart-versions-legend'),
-      ver.series ?? [],
+      verR.value.series ?? [],
     );
     const n = verMeta.buckets.length;
     $('chart-version-buckets').textContent = `${n} version${n === 1 ? '' : 's'}`;
     $('chart-versions-from').textContent = verMeta.from;
     $('chart-versions-to').textContent = verMeta.to;
-    ctx.setRefreshed(new Date().toLocaleTimeString());
-  } catch (err) {
-    // History failing is not fatal: the live numbers keep updating and the
-    // charts keep their last good render. The status pill reports it.
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus('error', `error: history ${msg}`);
+    anySuccess = true;
+  } else {
+    failures.push(describe('stats-history version', verR.reason));
   }
+
+  reportStatus('history', failures, anySuccess);
 }
 
 // -- Panel contract ----------------------------------------------------------

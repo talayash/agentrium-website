@@ -153,15 +153,21 @@ export function errorState(message: string): HTMLElement {
   return node;
 }
 
+// `label` and `subLabel` are escaped here, at the sink, rather than trusted
+// to each call site: the values are client-reported telemetry (version
+// strings, OS names, error sources), so the invariant belongs where the
+// HTML is built, not scattered across every caller.
 function renderBar(label: string, subLabel: string, value: number, max: number, total: number): HTMLElement {
   const pct = total > 0 ? (value / total) * 100 : 0;
   const widthPct = max > 0 ? (value / max) * 100 : 0;
+  const safeLabel = escapeHtml(label);
+  const safeSub = escapeHtml(subLabel);
 
   const row = document.createElement('div');
   row.className = 'group';
   row.innerHTML = `
     <div class="flex items-baseline justify-between gap-2 mb-1">
-      <span class="text-sm truncate" style="color:var(--muted-body)">${label}${subLabel ? `<span class="ml-1.5 text-xs" style="color:var(--muted-label)">${subLabel}</span>` : ''}</span>
+      <span class="text-sm truncate" style="color:var(--muted-body)">${safeLabel}${safeSub ? `<span class="ml-1.5 text-xs" style="color:var(--muted-label)">${safeSub}</span>` : ''}</span>
       <span class="text-xs tabular-nums flex-shrink-0" style="color:var(--muted-body)">${formatNumber(value)} <span style="color:var(--muted-label)">(${pct.toFixed(1)}%)</span></span>
     </div>
     <div class="h-2 rounded-full overflow-hidden" style="background:rgba(10,132,255,0.14)">

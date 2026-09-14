@@ -2,11 +2,12 @@
 // data the /errors slash command reads.
 //
 // Error messages, stacks and version strings come from user machines, so the
-// group list is built entirely with el/text (textContent) and the breakdown
-// labels are escaped before reaching the distribution renderer.
+// group list is built entirely with el/text (textContent), and the breakdown
+// labels reach renderDistribution as plain strings: its sink (renderBar in
+// ../charts) escapes them before they go into HTML.
 
 import { $, clear, el, text } from '../dom';
-import { escapeHtml, formatNumber, osIcon, osLabel, timeAgo } from '../format';
+import { formatNumber, osIcon, osLabel, timeAgo } from '../format';
 import { renderDistribution, renderLineArea } from '../charts';
 import { getJson } from '../session';
 import { createPoller, type Poller } from '../poll';
@@ -152,22 +153,20 @@ function render(data: ErrorsSummary): void {
   $('err-installs').textContent = formatNumber(data.affected_installations ?? 0);
   $('err-groups').textContent = formatNumber(data.unique_fingerprints ?? 0);
 
-  // Labels are interpolated into HTML by the distribution renderer, so the
-  // server-supplied source, version and OS strings are escaped here.
   renderDistribution(
     $('err-by-source'),
     toRecord(data.by_source, (r) => r.source, (r) => r.count),
-    (key) => ({ label: escapeHtml(key), sub: '' }),
+    (key) => ({ label: key, sub: '' }),
   );
   renderDistribution(
     $('err-by-version'),
     toRecord(data.by_version, (r) => r.version, (r) => r.count),
-    (key) => ({ label: `v${escapeHtml(key)}`, sub: '' }),
+    (key) => ({ label: `v${key}`, sub: '' }),
   );
   renderDistribution(
     $('err-by-os'),
     toRecord(data.by_os, (r) => r.os, (r) => r.count),
-    (key) => ({ label: `${osIcon(key)} ${escapeHtml(osLabel(key))}`, sub: '' }),
+    (key) => ({ label: `${osIcon(key)} ${osLabel(key)}`, sub: '' }),
   );
 
   renderLineArea(
