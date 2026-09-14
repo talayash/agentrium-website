@@ -46,10 +46,11 @@ describe('Palette discipline (Midnight Glass)', () => {
     expect(css).toMatch(/--ink:\s*#1D1D1F/i);
   });
 
-  it('global.css keeps the legacy aliases /stat depends on', async () => {
-    // /stat styles itself with var(--coral), var(--ink), var(--muted-label),
-    // var(--muted-body) and the .surface card class. The aliases may point at
-    // the new palette, but they must exist.
+  it('global.css keeps the legacy aliases the admin telemetry panel depends on', async () => {
+    // src/lib/admin/panels/telemetry.ts (the moved body of the old /stat page,
+    // now the dashboard's Telemetry tab) styles itself with var(--coral),
+    // var(--ink), var(--muted-label), var(--muted-body) and the .surface card
+    // class. The aliases may point at the new palette, but they must exist.
     const css = await readFile(join(ROOT, 'src/styles/global.css'), 'utf8');
     for (const token of ['--coral:', '--paper:', '--muted-label:', '--muted-body:', '--hairline:']) {
       expect(css, `global.css must keep declaring ${token}`).toContain(token);
@@ -63,7 +64,7 @@ describe('Palette discipline (Midnight Glass)', () => {
     }
   });
 
-  it('global.css defines the .surface utility used by /stat', async () => {
+  it('global.css defines the .surface utility used by the admin telemetry panel', async () => {
     const css = await readFile(join(ROOT, 'src/styles/global.css'), 'utf8');
     expect(css).toMatch(/\.surface\s*\{[^}]*(background|border)/);
   });
@@ -129,8 +130,8 @@ describe('Motion discipline', () => {
 
 describe('Layout head', () => {
   it('Layout.astro exposes a <slot name="head" /> for per-page meta', async () => {
-    // Required so /stat can inject its noindex robots meta. Without this,
-    // the /stat page becomes indexable.
+    // Required so /admin can inject its noindex robots meta. Without this,
+    // the admin dashboard becomes indexable.
     const src = await readFile(join(ROOT, 'src/layouts/Layout.astro'), 'utf8');
     expect(src).toMatch(/<slot\s+name=["']head["']\s*\/?>/);
   });
@@ -145,5 +146,47 @@ describe('Layout head', () => {
   it('Layout.astro declares a favicon', async () => {
     const src = await readFile(join(ROOT, 'src/layouts/Layout.astro'), 'utf8');
     expect(src).toMatch(/rel=["']icon["'][^>]+href=/);
+  });
+});
+
+describe('Admin dashboard', () => {
+  it('admin.astro composes the five tabs and is noindex', async () => {
+    const src = await readFile(join(ROOT, 'src/pages/admin.astro'), 'utf8');
+    for (const tab of ['overview', 'users', 'telemetry', 'errors', 'inbox']) {
+      expect(src).toContain(`data-tab="${tab}"`);
+      expect(src).toContain(`data-panel="${tab}"`);
+    }
+    expect(src).toMatch(/name="robots" content="noindex/);
+  });
+
+  it('only admin.astro and its panels call the admin proxies', async () => {
+    const files = (await walk(join(ROOT, 'src'), ['.astro', '.ts', '.js']))
+      .filter((f) => !f.includes(`${join('src', 'lib', 'admin')}`) && !f.endsWith('admin.astro'));
+    for (const f of files) {
+      const src = await readFile(f, 'utf8');
+      expect(src, `${f} must not call /api/admin-*`).not.toMatch(/\/api\/admin-/);
+    }
+  });
+
+  it('every api/*.js data proxy is session-gated', async () => {
+    const dir = join(ROOT, 'api');
+    const entries = (await readdir(dir)).filter((n) => n.endsWith('.js'));
+    const exempt = new Set(['admin-login.js', 'admin-logout.js', 'admin-session.js']);
+    for (const name of entries) {
+      if (exempt.has(name)) continue;
+      const src = await readFile(join(dir, name), 'utf8');
+      expect(src, `${name} must go through proxyWorker/fetchApi (session gate)`).toMatch(/proxyWorker|fetchApi/);
+    }
+  });
+
+  it('/stat and /inbox are retired in favor of admin.astro redirects', async () => {
+    // Both pages became session-gated once their data proxies started
+    // requiring an admin session, so a signed-out bookmark must redirect
+    // rather than render a dead page.
+    await expect(readFile(join(ROOT, 'src/pages/stat.astro'), 'utf8')).rejects.toThrow();
+    await expect(readFile(join(ROOT, 'src/pages/inbox.astro'), 'utf8')).rejects.toThrow();
+    const config = await readFile(join(ROOT, 'astro.config.mjs'), 'utf8');
+    expect(config, 'astro.config.mjs must redirect /stat').toMatch(/['"]\/stat['"]\s*:\s*['"]\/admin#telemetry['"]/);
+    expect(config, 'astro.config.mjs must redirect /inbox').toMatch(/['"]\/inbox['"]\s*:\s*['"]\/admin#inbox['"]/);
   });
 });
