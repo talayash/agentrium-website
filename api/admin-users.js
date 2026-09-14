@@ -1,7 +1,9 @@
 export const config = { runtime: 'edge' };
 import { fetchApi, passThrough } from './_lib/api-proxy.js';
+import { jsonResponse } from './_lib/admin-session.js';
 
 export default async function handler(request) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'method_not_allowed' }, 405);
   const incoming = new URL(request.url);
   const qs = new URLSearchParams();
   const q = incoming.searchParams.get('q');

@@ -61,6 +61,16 @@ describe('admin-summary', () => {
 });
 
 describe('admin-users and admin-user', () => {
+  it('401 without a session, and the upstream is never called', async () => {
+    const r = await users(new Request('https://x/api/admin-users'));
+    expect(r.status).toBe(401);
+    expect(calls.length).toBe(0);
+  });
+  it('401 without a session, and the upstream is never called (admin-user)', async () => {
+    const r = await user(new Request('https://x/api/admin-user?id=6f1c2a3e-1111-4222-8333-444455556666'));
+    expect(r.status).toBe(401);
+    expect(calls.length).toBe(0);
+  });
   it('forwards whitelisted params', async () => {
     await users(new Request('https://x/api/admin-users?q=dan&limit=20&cursor=abc&evil=1', { headers: { cookie } }));
     expect(calls[0][0]).toBe(`${API}/api/admin/users?q=dan&limit=20&cursor=abc`);

@@ -39,6 +39,9 @@ export default async function handler(request) {
   } catch {
     return jsonResponse({ error: 'rate_limiter_unavailable' }, 503);
   }
+  if (!verdict || typeof verdict !== 'object') {
+    return jsonResponse({ error: 'rate_limiter_unavailable' }, 503);
+  }
   if (!verdict.allowed) {
     const retry = Math.max(1, Number(verdict.retry_after_seconds) || 60);
     return jsonResponse({ error: 'rate_limited', retry_after: retry }, 429, { 'retry-after': String(retry) });

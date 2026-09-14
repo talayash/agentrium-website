@@ -4,6 +4,7 @@ import { jsonResponse } from './_lib/admin-session.js';
 import { WORKER_ORIGIN } from './_lib/worker-proxy.js';
 
 export default async function handler(request) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'method_not_allowed' }, 405);
   const { denied, upstream } = await fetchApi(request, '/api/admin/summary');
   if (denied) return denied;
   if (!upstream.ok) return passThrough(upstream);
@@ -12,6 +13,9 @@ export default async function handler(request) {
   try {
     summary = await upstream.json();
   } catch {
+    return jsonResponse({ error: 'bad_upstream_response' }, 502);
+  }
+  if (!summary || typeof summary !== 'object') {
     return jsonResponse({ error: 'bad_upstream_response' }, 502);
   }
   const ids = Array.isArray(summary.active_installation_ids) ? summary.active_installation_ids : [];

@@ -17,8 +17,26 @@ export async function fetchApi(request, pathWithQuery) {
 }
 
 export async function passThrough(upstream) {
-  return new Response(await upstream.text(), {
+  const text = await upstream.text();
+  const contentType = upstream.headers.get('content-type') ?? '';
+
+  if (!upstream.ok) {
+    // A non-2xx upstream body is relayed only when it is genuinely the JSON
+    // error shape callers expect; a platform error page (HTML, plain text,
+    // or malformed JSON) from the broker must not reach the browser as-is.
+    let isJson = contentType.includes('application/json');
+    if (isJson) {
+      try {
+        JSON.parse(text);
+      } catch {
+        isJson = false;
+      }
+    }
+    if (!isJson) return jsonResponse({ error: 'upstream_error' }, upstream.status);
+  }
+
+  return new Response(text, {
     status: upstream.status,
-    headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' },
+    headers: { 'content-type': contentType || 'application/json', 'cache-control': 'no-store' },
   });
 }
