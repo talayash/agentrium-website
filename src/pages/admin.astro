@@ -63,8 +63,10 @@ import Layout from '../layouts/Layout.astro';
 
   <script>
     import { parseTab, tabHash, TABS, type Tab } from '../lib/admin/tabs';
-    import { checkSession, login, logout } from '../lib/admin/session';
+    import { checkSession, login, logout, getJson } from '../lib/admin/session';
     import { $ } from '../lib/admin/dom';
+    import { formatNumber } from '../lib/admin/format';
+    import { createPoller } from '../lib/admin/poll';
     import * as overview from '../lib/admin/panels/overview';
     import * as users from '../lib/admin/panels/users';
     import * as telemetry from '../lib/admin/panels/telemetry';
@@ -73,7 +75,12 @@ import Layout from '../layouts/Layout.astro';
 
     const panels: Record<Tab, typeof overview> = { overview, users, telemetry, errors, inbox };
     let active: Tab | null = null;
-    let badgePollers: Array<{ stop(): void }> = [];
+    // Pollers the shell owns: the live pill plus the two tab badges. They run
+    // whichever tab is showing, so they are stopped only on session expiry.
+    let shellPollers: Array<{ stop(): void }> = [];
+
+    function setLive(n: string) { $('live-count').textContent = n; }
+    function setRefreshed(s: string) { $('refreshed-pill').textContent = s; }
 
     function setBadge(name: 'errors' | 'inbox', n: number) {
       const b = document.querySelector<HTMLElement>(`[data-badge="${name}"]`);
@@ -83,6 +90,9 @@ import Layout from '../layouts/Layout.astro';
     }
 
     function showTab(tab: Tab) {
+      // A hashchange after the session expired must not revive a panel behind
+      // the login card.
+      if ($('app').hidden) return;
       if (active === tab) return;
       if (active) panels[active].deactivate();
       for (const t of TABS) {
@@ -96,8 +106,8 @@ import Layout from '../layouts/Layout.astro';
     function onUnauthorized() {
       // Stop every poll first, otherwise they keep firing 401s behind the card.
       for (const t of TABS) panels[t].deactivate();
-      for (const p of badgePollers) p.stop();
-      badgePollers = [];
+      for (const p of shellPollers) p.stop();
+      shellPollers = [];
       active = null;
       $('app').hidden = true;
       $('login').hidden = false;
@@ -108,19 +118,33 @@ import Layout from '../layouts/Layout.astro';
       if (!(await checkSession())) return;
       $('login').hidden = true;
       $('app').hidden = false;
-      const ctx = {
-        onUnauthorized,
-        setLive: (n: string) => { $('live-count').textContent = n; },
-        setRefreshed: (s: string) => { $('refreshed-pill').textContent = s; },
-        setBadge,
-      };
+      const ctx = { onUnauthorized, setLive, setRefreshed, setBadge };
       for (const t of TABS) panels[t].mount($(`panel-${t}`), ctx);
       showTab(parseTab(location.hash));
       window.addEventListener('hashchange', () => showTab(parseTab(location.hash)));
-      $('refresh-btn').addEventListener('click', () => { if (active) panels[active].refresh(); });
+
+      // The live pill belongs to the shell, so it keeps counting on every tab
+      // rather than only the two panels that happen to fetch stats-live.
+      const livePoller = createPoller(async () => {
+        try {
+          const live = await getJson<{ active_now?: number }>('/api/stats-live', onUnauthorized);
+          setLive(formatNumber(live.active_now ?? 0));
+          setRefreshed(new Date().toLocaleTimeString());
+        } catch {
+          // The active panel's status pill reports fetch failures; the pill
+          // simply keeps its last good count.
+        }
+      }, 15_000);
+      livePoller.start();
+
+      $('refresh-btn').addEventListener('click', () => {
+        livePoller.now();
+        if (active) panels[active].refresh();
+      });
       $('logout-btn').addEventListener('click', async () => { await logout(); location.reload(); });
+
       // Badges come from the two cheapest endpoints, independent of the active tab.
-      badgePollers = [errors.pollBadge(ctx), inbox.pollBadge(ctx)];
+      shellPollers = [livePoller, errors.pollBadge(ctx), inbox.pollBadge(ctx)];
     }
 
     $('login-form').addEventListener('submit', async (e) => {

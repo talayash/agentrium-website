@@ -101,6 +101,12 @@ let searchTimer: number | null = null;
 
 // -- Shared bits -------------------------------------------------------------
 
+function setStatus(detail: string, isError = false): void {
+  const pill = $('users-status');
+  pill.style.color = isError ? '#FF453A' : 'var(--night-text-2)';
+  pill.textContent = detail;
+}
+
 export function providerLabel(provider: string | null | undefined): string {
   switch (String(provider ?? '').toLowerCase()) {
     case 'google':
@@ -244,11 +250,14 @@ function renderDetail(detail: UserDetail): void {
     const row = el('div', 'text-xs text-[var(--night-text-2)] py-1.5 border-b border-[var(--night-seam)]');
     const top = el('div', 'flex flex-wrap items-center gap-2');
     top.appendChild(text('span', 'text-[var(--night-text)]', timeAgo(device.created_at)));
+    // Revocation is decided by revoked_at: a revoked token may carry no reason,
+    // and such a device must not read as active.
+    const revoked = device.revoked_at != null;
     top.appendChild(
       text(
         'span',
-        device.revoked_reason ? 'text-[#FF453A]' : 'text-[#30D158]',
-        device.revoked_reason ?? 'active',
+        revoked ? 'text-[#FF453A]' : 'text-[#30D158]',
+        revoked ? (device.revoked_reason ?? 'revoked') : 'active',
       ),
     );
     row.appendChild(top);
@@ -291,7 +300,6 @@ async function selectUser(item: UserItem, row: HTMLTableRowElement): Promise<voi
   for (const other of Array.from($('users-rows').querySelectorAll('tr'))) {
     other.classList.toggle('is-selected', other === row);
   }
-  const status = $('users-status');
   try {
     const detail = await getJson<UserDetail>(
       `/api/admin-user?id=${encodeURIComponent(item.id)}`,
@@ -299,16 +307,22 @@ async function selectUser(item: UserItem, row: HTMLTableRowElement): Promise<voi
     );
     renderDetail(detail);
   } catch (err) {
+    // Never leave the previous user's detail showing next to a different
+    // selected row: the aside reports the failure instead.
     const msg = err instanceof Error ? err.message : String(err);
-    status.textContent = `error: ${msg}`;
+    const aside = $('user-detail');
+    clear(aside);
+    aside.hidden = false;
+    aside.appendChild(text('div', 'text-sm text-[#FF453A]', `error: ${msg}`));
+    aside.appendChild(text('div', 'text-xs text-[var(--night-text-3)] mt-1', item.email));
+    setStatus(`error: ${msg}`, true);
   }
 }
 
 // -- List --------------------------------------------------------------------
 
 async function load(append: boolean): Promise<void> {
-  const status = $('users-status');
-  status.textContent = 'loading…';
+  setStatus('loading…');
   const url = new URL('/api/admin-users', window.location.origin);
   url.searchParams.set('limit', String(PAGE_SIZE));
   if (query) url.searchParams.set('q', query);
@@ -331,16 +345,25 @@ async function load(append: boolean): Promise<void> {
     }
     cursor = data.next_cursor ?? null;
     ($('users-more') as HTMLButtonElement).hidden = cursor === null;
-    $('users-empty').hidden = rows.childElementCount > 0;
+    const empty = $('users-empty');
+    empty.textContent = 'No users match.';
+    empty.hidden = rows.childElementCount > 0;
     $('users-total').textContent = typeof data.total === 'number' ? `· ${formatNumber(data.total)}` : '';
     const at = new Date().toLocaleTimeString();
-    status.textContent = `ok · ${at}`;
+    setStatus(`ok · ${at}`);
     ctx.setRefreshed(at);
     loadedOnce = true;
   } catch (err) {
-    // A failed load keeps the rows already on screen; the pill says why.
+    // The pill always lands on the failure, and an empty table says why rather
+    // than sitting blank. Rows already on screen are kept.
     const msg = err instanceof Error ? err.message : String(err);
-    status.textContent = `error: ${msg}`;
+    setStatus(`error: ${msg}`, true);
+    ($('users-more') as HTMLButtonElement).hidden = true;
+    if ($('users-rows').childElementCount === 0) {
+      const empty = $('users-empty');
+      empty.textContent = `Could not load users: ${msg}`;
+      empty.hidden = false;
+    }
   }
 }
 

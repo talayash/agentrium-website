@@ -78,65 +78,78 @@ let ctx: PanelCtx;
 let livePoller: Poller | null = null;
 let summaryPoller: Poller | null = null;
 
-function setStatus(detail: string, isError = false): void {
+// Each source renders on its own, so one endpoint failing degrades only the
+// tiles it feeds (spec section 9). Both pollers write the one status pill, so
+// their failures are kept apart and rendered as a union rather than
+// overwriting each other.
+const lastFailures: Record<'live' | 'summary', string[]> = { live: [], summary: [] };
+
+function describe(source: string, reason: unknown): string {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  return `${source} ${msg}`;
+}
+
+function reportStatus(group: 'live' | 'summary', failures: string[], anySuccess: boolean): void {
+  lastFailures[group] = failures;
+  const all = [...lastFailures.live, ...lastFailures.summary];
   const pill = $('ov-status');
-  pill.style.color = isError ? '#FF453A' : 'var(--night-text-2)';
-  pill.textContent = detail;
+  const at = new Date().toLocaleTimeString();
+  if (anySuccess) ctx.setRefreshed(at);
+  pill.style.color = all.length > 0 ? '#FF453A' : 'var(--night-text-2)';
+  pill.textContent = all.length > 0 ? `error: ${all.join(' · ')}` : `ok · ${at}`;
+}
+
+function renderSignedIn(signedIn: { active_today: number; active_now: number } | null | undefined): void {
+  $('ov-active-signed').textContent = signedIn ? formatNumber(signedIn.active_now) : 'n/a';
+  $('ov-dau-signed').textContent = signedIn
+    ? `${formatNumber(signedIn.active_today)} signed in`
+    : 'signed in: n/a';
 }
 
 async function fetchLive(): Promise<void> {
-  try {
-    const [stats, live] = await Promise.all([
-      getJson<TodayStats>('/api/stats', ctx.onUnauthorized),
-      getJson<LiveStats>('/api/stats-live', ctx.onUnauthorized),
-    ]);
+  const [statsR, liveR] = await Promise.allSettled([
+    getJson<TodayStats>('/api/stats', ctx.onUnauthorized),
+    getJson<LiveStats>('/api/stats-live', ctx.onUnauthorized),
+  ]);
+  const failures: string[] = [];
 
+  if (liveR.status === 'fulfilled') {
+    const live = liveR.value;
     const activeNow = formatNumber(live.active_now ?? 0);
     $('ov-active').textContent = activeNow;
     ctx.setLive(activeNow);
     $('ov-active-dims').textContent =
       `${distinctCount(live.by_version)} versions · ${distinctCount(live.by_os)} OS · ` +
       `${distinctCount(live.by_country)} countries`;
-
-    $('ov-dau').textContent = formatNumber(stats.daily_active_users ?? 0);
-    $('ov-installs').textContent = formatNumber(stats.total_installations ?? 0);
-
-    const at = new Date().toLocaleTimeString();
-    setStatus(`ok · ${at}`);
-    ctx.setRefreshed(at);
-  } catch (err) {
-    // A failed poll keeps the last good render.
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus(`error: ${msg}`, true);
+  } else {
+    failures.push(describe('stats-live', liveR.reason));
   }
+
+  if (statsR.status === 'fulfilled') {
+    $('ov-dau').textContent = formatNumber(statsR.value.daily_active_users ?? 0);
+    $('ov-installs').textContent = formatNumber(statsR.value.total_installations ?? 0);
+  } else {
+    failures.push(describe('stats', statsR.reason));
+  }
+
+  reportStatus('live', failures, failures.length < 2);
 }
 
 async function fetchSummary(): Promise<void> {
-  try {
-    const [summary, dau, errors, recent] = await Promise.all([
-      getJson<AdminSummary>('/api/admin-summary', ctx.onUnauthorized),
-      getJson<{ series?: LineAreaPoint[] }>('/api/stats-history?metric=dau&days=30', ctx.onUnauthorized),
-      getJson<ErrorsTotals>('/api/errors-summary?days=7&limit=1', ctx.onUnauthorized),
-      getJson<{ items?: UserItem[] }>('/api/admin-users?limit=10', ctx.onUnauthorized),
-    ]);
+  const [summaryR, dauR, errorsR, recentR] = await Promise.allSettled([
+    getJson<AdminSummary>('/api/admin-summary', ctx.onUnauthorized),
+    getJson<{ series?: LineAreaPoint[] }>('/api/stats-history?metric=dau&days=30', ctx.onUnauthorized),
+    getJson<ErrorsTotals>('/api/errors-summary?days=7&limit=1', ctx.onUnauthorized),
+    getJson<{ items?: UserItem[] }>('/api/admin-users?limit=10', ctx.onUnauthorized),
+  ]);
+  const failures: string[] = [];
 
+  if (summaryR.status === 'fulfilled') {
+    const summary = summaryR.value;
     const users = summary.users ?? {};
     $('ov-accounts').textContent = formatNumber(users.total ?? 0);
     $('ov-accounts-7d').textContent = `+${formatNumber(users.last_7d ?? 0)} in 7 days`;
-
-    const signedIn = summary.signed_in;
-    $('ov-active-signed').textContent = signedIn ? formatNumber(signedIn.active_now) : 'n/a';
-    $('ov-dau-signed').textContent = signedIn
-      ? `${formatNumber(signedIn.active_today)} signed in`
-      : 'signed in: n/a';
-
-    $('ov-errors').textContent = formatNumber(errors.total_errors ?? 0);
-    $('ov-errors-sub').textContent = `${formatNumber(errors.affected_installations ?? 0)} installations`;
-
-    const dauMeta = renderLineArea($('ov-chart-dau') as unknown as SVGElement, dau.series ?? [], '#0A84FF');
-    $('ov-dau-peak').textContent = `peak ${formatNumber(dauMeta.max)}`;
-    $('ov-dau-from').textContent = dauMeta.from;
-    $('ov-dau-to').textContent = dauMeta.to;
+    renderSignedIn(summary.signed_in);
 
     const signups = (summary.signups_by_day ?? []).map((d) => ({ date: d.date, value: d.count }));
     renderBars($('ov-chart-signups') as unknown as SVGElement, signups, '#7A5BFF');
@@ -146,10 +159,37 @@ async function fetchSummary(): Promise<void> {
     $('ov-signups-providers').textContent =
       `Google ${formatNumber(byProvider.google ?? 0)} · GitHub ${formatNumber(byProvider.github ?? 0)} · ` +
       `Email ${formatNumber(byProvider.email ?? 0)}`;
+  } else {
+    // The broker is the only source of the signed-in split, so it reads n/a
+    // rather than a stale or blank number.
+    renderSignedIn(null);
+    failures.push(describe('admin-summary', summaryR.reason));
+  }
 
+  if (dauR.status === 'fulfilled') {
+    const dauMeta = renderLineArea(
+      $('ov-chart-dau') as unknown as SVGElement,
+      dauR.value.series ?? [],
+      '#0A84FF',
+    );
+    $('ov-dau-peak').textContent = `peak ${formatNumber(dauMeta.max)}`;
+    $('ov-dau-from').textContent = dauMeta.from;
+    $('ov-dau-to').textContent = dauMeta.to;
+  } else {
+    failures.push(describe('stats-history', dauR.reason));
+  }
+
+  if (errorsR.status === 'fulfilled') {
+    $('ov-errors').textContent = formatNumber(errorsR.value.total_errors ?? 0);
+    $('ov-errors-sub').textContent = `${formatNumber(errorsR.value.affected_installations ?? 0)} installations`;
+  } else {
+    failures.push(describe('errors-summary', errorsR.reason));
+  }
+
+  if (recentR.status === 'fulfilled') {
     const tbody = $('ov-recent');
     clear(tbody);
-    for (const item of recent.items ?? []) {
+    for (const item of recentR.value.items ?? []) {
       tbody.appendChild(
         buildUserRow(
           item,
@@ -160,15 +200,11 @@ async function fetchSummary(): Promise<void> {
         ),
       );
     }
-
-    const at = new Date().toLocaleTimeString();
-    setStatus(`ok · ${at}`);
-    ctx.setRefreshed(at);
-  } catch (err) {
-    // A failed poll keeps the last good render.
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus(`error: ${msg}`, true);
+  } else {
+    failures.push(describe('admin-users', recentR.reason));
   }
+
+  reportStatus('summary', failures, failures.length < 4);
 }
 
 // -- Panel contract ----------------------------------------------------------
