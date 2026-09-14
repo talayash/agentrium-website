@@ -28,13 +28,38 @@ export async function logout(): Promise<void> {
   await fetch('/api/admin-logout', { method: 'POST', credentials: 'include', cache: 'no-store' });
 }
 
+/**
+ * How long one admin fetch may take before it is abandoned. Panels fetch their
+ * sources in parallel, so a hanging upstream must not hold back the siblings
+ * that already answered, and repeated polls must not queue up behind requests
+ * that will never settle.
+ */
+export const FETCH_TIMEOUT_MS = 20_000;
+
+function isAbortError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const name = (err as { name?: unknown }).name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
 /** GET JSON from a same-origin admin proxy. Throws on non-2xx; calls onUnauthorized on 401. */
 export async function getJson<T>(url: string, onUnauthorized: () => void): Promise<T> {
-  const r = await fetch(url, { cache: 'no-store', credentials: 'include' });
-  if (r.status === 401) {
-    onUnauthorized();
-    throw new Error('unauthorized');
+  try {
+    const r = await fetch(url, {
+      cache: 'no-store',
+      credentials: 'include',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (r.status === 401) {
+      onUnauthorized();
+      throw new Error('unauthorized');
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return (await r.json()) as T;
+  } catch (err) {
+    // Callers label failures by source, so an abort reads as "<source> timeout"
+    // rather than as a DOMException name.
+    if (isAbortError(err)) throw new Error('timeout');
+    throw err;
   }
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return (await r.json()) as T;
 }
