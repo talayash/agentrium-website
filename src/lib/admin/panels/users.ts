@@ -392,7 +392,14 @@ export function activate(): void {
 }
 
 export function deactivate(): void {
-  // No poller: the list is only refreshed on demand.
+  // No poller: the list is only refreshed on demand. The search debounce
+  // timer is the one thing still armed on a tab switch, so clear it here -
+  // otherwise it fires after the user has left, fetching and repainting a
+  // hidden panel and overwriting the shared refreshed pill.
+  if (searchTimer !== null) {
+    window.clearTimeout(searchTimer);
+    searchTimer = null;
+  }
 }
 
 export function refresh(): void {
