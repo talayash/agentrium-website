@@ -34,6 +34,21 @@ npm run test:run  # Run the content-lint + build-smoke suite
 - **Changelog** is sourced from `src/data/changelog.json`, synced from the main repo via the `sync-release.yml` workflow
 - A **repository dispatch** from the main repo's release workflow triggers a rebuild on each new release
 
+## Admin dashboard (`/admin`)
+
+Private, password-gated page that merges the telemetry dashboard, the error summary, the feedback inbox and account data. Served by `src/pages/admin.astro`; data comes only through same-origin edge functions in `api/`, which hold every secret.
+
+Vercel environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `ADMIN_PASSWORD` | The one password for `/admin`. |
+| `ADMIN_SESSION_SECRET` | 32+ random bytes (base64), signs the HttpOnly session cookie. |
+| `ADMIN_API_TOKEN` | Shared with the `agentrium-api` project; sent as `x-admin-token` to its read-only `/api/admin/*` routes. |
+| `CT_STATS_TOKEN` | Existing token for the ct-analytics Worker. |
+
+Login is rate limited to 10 attempts per IP per 15 minutes through the Worker's KV and fails closed if the Worker is unreachable. `/stat` and `/inbox` are kept for a transition period and then redirect to `/admin#telemetry` and `/admin#inbox`.
+
 ## Project Structure
 
 ```
@@ -50,13 +65,16 @@ src/
     index.astro               # Landing page
     changelog.astro           # Release history (manifesto pattern)
     stat.astro                # Hidden telemetry dashboard
+    admin.astro               # Password-gated admin dashboard (tabs: overview, users, telemetry, errors, inbox)
   data/
     changelog.json            # Release notes data
     features.json             # Feature descriptions
+  lib/admin/                # Dashboard modules (tabs, charts, panels)
   styles/global.css           # Palette tokens, type scale, coral signature
 tests/
   content-lint.test.js        # Enforces design conventions (palette, IA, coral discipline)
   build-smoke.test.js         # Verifies astro build completes
+api/                      # Vercel edge proxies (session-gated)
 public/
   screenshots/                # App screenshots
   icons/                      # App icon

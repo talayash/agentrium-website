@@ -147,3 +147,34 @@ describe('Layout head', () => {
     expect(src).toMatch(/rel=["']icon["'][^>]+href=/);
   });
 });
+
+describe('Admin dashboard', () => {
+  it('admin.astro composes the five tabs and is noindex', async () => {
+    const src = await readFile(join(ROOT, 'src/pages/admin.astro'), 'utf8');
+    for (const tab of ['overview', 'users', 'telemetry', 'errors', 'inbox']) {
+      expect(src).toContain(`data-tab="${tab}"`);
+      expect(src).toContain(`data-panel="${tab}"`);
+    }
+    expect(src).toMatch(/name="robots" content="noindex/);
+  });
+
+  it('only admin.astro and its panels call the admin proxies', async () => {
+    const files = (await walk(join(ROOT, 'src'), ['.astro', '.ts', '.js']))
+      .filter((f) => !f.includes(`${join('src', 'lib', 'admin')}`) && !f.endsWith('admin.astro'));
+    for (const f of files) {
+      const src = await readFile(f, 'utf8');
+      expect(src, `${f} must not call /api/admin-*`).not.toMatch(/\/api\/admin-/);
+    }
+  });
+
+  it('every api/*.js data proxy is session-gated', async () => {
+    const dir = join(ROOT, 'api');
+    const entries = (await readdir(dir)).filter((n) => n.endsWith('.js'));
+    const exempt = new Set(['admin-login.js', 'admin-logout.js', 'admin-session.js']);
+    for (const name of entries) {
+      if (exempt.has(name)) continue;
+      const src = await readFile(join(dir, name), 'utf8');
+      expect(src, `${name} must go through proxyWorker/fetchApi (session gate)`).toMatch(/proxyWorker|fetchApi/);
+    }
+  });
+});
