@@ -22,7 +22,7 @@ import Layout from '../layouts/Layout.astro';
         <input id="login-password" type="password" autocomplete="current-password" required
                class="admin-input mt-1.5 w-full" />
       </label>
-      <button type="submit" class="admin-btn-primary w-full">Sign in</button>
+      <button id="login-submit" type="submit" class="admin-btn-primary w-full">Sign in</button>
       <p id="login-error" class="text-sm text-[#FF453A] min-h-5" role="alert"></p>
     </form>
   </main>
@@ -141,7 +141,16 @@ import Layout from '../layouts/Layout.astro';
         livePoller.now();
         if (active) panels[active].refresh();
       });
-      $('logout-btn').addEventListener('click', async () => { await logout(); location.reload(); });
+      $('logout-btn').addEventListener('click', async () => {
+        try {
+          await logout();
+        } catch {
+          // The cookie may already be cleared server-side; reload regardless
+          // so the visitor is not left looking signed in.
+        } finally {
+          location.reload();
+        }
+      });
 
       // Badges come from the two cheapest endpoints, independent of the active tab.
       shellPollers = [livePoller, errors.pollBadge(ctx), inbox.pollBadge(ctx)];
@@ -152,13 +161,21 @@ import Layout from '../layouts/Layout.astro';
       const err = $('login-error');
       err.textContent = '';
       const pw = ($('login-password') as HTMLInputElement).value;
-      const r = await login(pw);
-      if (r.ok) { location.hash = location.hash || tabHash('overview'); location.reload(); return; }
-      err.textContent =
-        r.status === 401 ? 'Wrong password.'
-        : r.status === 429 ? `Too many attempts. Try again in ${Math.ceil((r.retryAfter ?? 900) / 60)} minutes.`
-        : r.status === 503 ? 'Rate limiter unavailable, try again shortly.'
-        : 'Server misconfigured.';
+      const btn = $('login-submit') as HTMLButtonElement;
+      btn.disabled = true;
+      try {
+        const r = await login(pw);
+        if (r.ok) { location.hash = location.hash || tabHash('overview'); location.reload(); return; }
+        err.textContent =
+          r.status === 401 ? 'Wrong password.'
+          : r.status === 429 ? `Too many attempts. Try again in ${Math.ceil((r.retryAfter ?? 900) / 60)} minutes.`
+          : r.status === 503 ? 'Rate limiter unavailable, try again shortly.'
+          : 'Server misconfigured.';
+      } catch {
+        err.textContent = 'Network error, try again.';
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     boot();
