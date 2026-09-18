@@ -6,6 +6,8 @@ import history from '../api/stats-history.js';
 import feedbackList from '../api/feedback-list.js';
 import feedbackMark from '../api/feedback-mark-read.js';
 import errorsSummary from '../api/errors-summary.js';
+import errorsResolve from '../api/errors-resolve.js';
+import feedbackDelete from '../api/feedback-delete.js';
 
 const SECRET = 's3';
 let upstream;
@@ -27,6 +29,8 @@ const cases = [
   ['feedback-list', feedbackList, 'GET', '/api/feedback-list?limit=5&unread_only=1', 'https://ct-analytics.claude-terminal.workers.dev/feedback/list?limit=5&unread_only=1'],
   ['feedback-mark-read', feedbackMark, 'POST', '/api/feedback-mark-read', 'https://ct-analytics.claude-terminal.workers.dev/feedback/mark_read'],
   ['errors-summary', errorsSummary, 'GET', '/api/errors-summary?days=30&limit=10', 'https://ct-analytics.claude-terminal.workers.dev/errors/summary?days=30&limit=10'],
+  ['errors-resolve', errorsResolve, 'POST', '/api/errors-resolve', 'https://ct-analytics.claude-terminal.workers.dev/errors/resolve'],
+  ['feedback-delete', feedbackDelete, 'POST', '/api/feedback-delete', 'https://ct-analytics.claude-terminal.workers.dev/feedback/delete'],
 ];
 
 describe.each(cases)('%s proxy', (_name, handler, method, path, expectedUpstream) => {
@@ -59,5 +63,37 @@ describe('upstream failure', () => {
     upstream.mockRejectedValue(new Error('down'));
     const r = await stats(new Request('https://x/api/stats', { headers: { cookie } }));
     expect(r.status).toBe(502);
+  });
+});
+
+describe('write proxies reject the wrong verb', () => {
+  it('405s a GET to errors-resolve without calling upstream', async () => {
+    const r = await errorsResolve(new Request('https://x/api/errors-resolve', { headers: { cookie } }));
+    expect(r.status).toBe(405);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+  it('405s a GET to feedback-delete without calling upstream', async () => {
+    const r = await feedbackDelete(new Request('https://x/api/feedback-delete', { headers: { cookie } }));
+    expect(r.status).toBe(405);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+});
+
+describe('write proxies relay the request body verbatim', () => {
+  it('forwards a resolve batch', async () => {
+    const body = JSON.stringify({ fingerprints: ['a1b2'], resolved: true });
+    await errorsResolve(new Request('https://x/api/errors-resolve', {
+      method: 'POST', body, headers: { cookie, 'content-type': 'application/json' },
+    }));
+    expect(upstream.mock.calls[0][1].body).toBe(body);
+  });
+  it('forwards an undo as the same route with the flag flipped', async () => {
+    const body = JSON.stringify({ ids: [7], deleted: false });
+    await feedbackDelete(new Request('https://x/api/feedback-delete', {
+      method: 'POST', body, headers: { cookie, 'content-type': 'application/json' },
+    }));
+    const [url, opts] = upstream.mock.calls[0];
+    expect(String(url)).toBe('https://ct-analytics.claude-terminal.workers.dev/feedback/delete');
+    expect(opts.body).toBe(body);
   });
 });

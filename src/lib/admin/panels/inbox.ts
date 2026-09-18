@@ -9,11 +9,13 @@ import { clear, el, text, $ } from '../dom';
 import { timeAgo } from '../format';
 import { getJson } from '../session';
 import { createPoller, type Poller } from '../poll';
+import { showToast } from '../toast';
 import type { PanelCtx } from './types';
 
 const ENDPOINTS = {
   list: '/api/feedback-list',
   markRead: '/api/feedback-mark-read',
+  delete: '/api/feedback-delete',
 };
 const POLL_MS = 60_000;
 
@@ -39,14 +41,14 @@ const MARKUP = `
     <h2 class="admin-h2">Inbox</h2>
     <div class="flex items-center gap-3">
       <label class="text-xs text-[var(--muted-body)] flex items-center gap-1.5 select-none">
-        <input id="inbox-filter-unread" type="checkbox" class="accent-[var(--coral)]" />
+        <input id="inbox-filter-unread" type="checkbox" class="admin-check" />
         unread only
       </label>
       <span id="inbox-status" class="admin-pill">loading…</span>
     </div>
   </div>
 
-  <div class="grid grid-cols-3 gap-4 mb-6">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
     <div class="surface rounded-xl p-5">
       <div class="text-xs uppercase tracking-wider text-[var(--muted-label)] mb-2">Total</div>
       <div id="inbox-total" class="text-3xl font-bold text-[var(--ink)] tabular-nums">-</div>
@@ -80,6 +82,38 @@ async function markRead(ids: Array<number | string>): Promise<void> {
   });
 }
 
+/**
+ * Soft delete. The row keeps its text in D1 and only leaves the list and the
+ * counters, so `deleted: false` restores it - that is what Undo sends.
+ */
+async function setDeleted(ids: Array<number | string>, deleted: boolean): Promise<void> {
+  const res = await fetch(ENDPOINTS.delete, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ids, deleted }),
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+function onDeleteClick(item: FeedbackItem, deleted: boolean): void {
+  void (async () => {
+    try {
+      await setDeleted([item.id], deleted);
+      await load();
+      // The undo offer is the confirmation step: one click to delete, one to
+      // take it back, rather than a dialog that gets clicked through.
+      showToast(deleted ? 'Message deleted.' : 'Message restored.', {
+        label: 'Undo',
+        onAction: () => onDeleteClick(item, !deleted),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Could not delete: ${msg}`);
+    }
+  })();
+}
+
 function buildCard(item: FeedbackItem): HTMLElement {
   const unread = item.read_at === null;
   const li = el('li', `surface rounded-xl p-5 ${unread ? 'border-l-4 border-[var(--coral)]' : ''}`);
@@ -88,7 +122,12 @@ function buildCard(item: FeedbackItem): HTMLElement {
   const headerLeft = el('div', '');
 
   const nameRow = el('div', 'flex items-center gap-2 mb-1');
-  nameRow.appendChild(text('span', 'font-semibold text-[var(--ink)]', item.name));
+  // Feedback arrives in the sender's own script. Without dir=auto the browser
+  // inherits the page's LTR and renders Hebrew or Arabic names with their
+  // punctuation on the wrong side.
+  const name = text('span', 'font-semibold text-[var(--ink)]', item.name);
+  name.dir = 'auto';
+  nameRow.appendChild(name);
   if (unread) {
     nameRow.appendChild(
       text(
@@ -109,25 +148,35 @@ function buildCard(item: FeedbackItem): HTMLElement {
 
   header.appendChild(headerLeft);
 
+  const actions = el('div', 'flex items-center gap-2 shrink-0');
   if (unread) {
     const btn = text(
       'button',
       'text-xs px-2 py-1 rounded bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 text-[var(--coral)] border border-[var(--coral)]/30',
       'mark read',
     );
+    btn.setAttribute('type', 'button');
     btn.addEventListener('click', () => {
       void (async () => {
         await markRead([item.id]);
         await load();
       })();
     });
-    header.appendChild(btn);
+    actions.appendChild(btn);
   }
+
+  const del = text('button', 'admin-btn-danger', 'delete');
+  del.setAttribute('type', 'button');
+  del.title = 'Delete this message (undo available briefly)';
+  del.addEventListener('click', () => onDeleteClick(item, true));
+  actions.appendChild(del);
+
+  header.appendChild(actions);
   li.appendChild(header);
 
-  li.appendChild(
-    text('p', 'text-[var(--ink)] text-sm whitespace-pre-wrap leading-relaxed', item.message),
-  );
+  const body = text('p', 'text-[var(--ink)] text-sm whitespace-pre-wrap leading-relaxed', item.message);
+  body.dir = 'auto';
+  li.appendChild(body);
   return li;
 }
 

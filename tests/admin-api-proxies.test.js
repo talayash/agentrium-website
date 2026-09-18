@@ -75,6 +75,23 @@ describe('admin-users and admin-user', () => {
     await users(new Request('https://x/api/admin-users?q=dan&limit=20&cursor=abc&evil=1', { headers: { cookie } }));
     expect(calls[0][0]).toBe(`${API}/api/admin/users?q=dan&limit=20&cursor=abc`);
   });
+  it('forwards the sort and direction', async () => {
+    await users(new Request('https://x/api/admin-users?sort=last_seen&dir=asc', { headers: { cookie } }));
+    expect(calls[0][0]).toBe(`${API}/api/admin/users?sort=last_seen&dir=asc`);
+  });
+  it('drops an unknown sort key rather than relaying it', async () => {
+    // The broker would answer 400; there is no reason to spend the round trip,
+    // and the allowlist is what keeps this proxy a fixed surface.
+    await users(new Request('https://x/api/admin-users?sort=last_login&dir=sideways', { headers: { cookie } }));
+    expect(calls[0][0]).toBe(`${API}/api/admin/users`);
+  });
+  it('accepts every sort key the dashboard offers', async () => {
+    for (const k of ['created', 'last_seen', 'email', 'name', 'provider', 'devices', 'app_version', 'os', 'profiles', 'workspaces']) {
+      calls.length = 0;
+      await users(new Request(`https://x/api/admin-users?sort=${k}`, { headers: { cookie } }));
+      expect(calls[0][0]).toBe(`${API}/api/admin/users?sort=${k}`);
+    }
+  });
   it('validates the user id', async () => {
     expect((await user(new Request('https://x/api/admin-user?id=nope', { headers: { cookie } }))).status).toBe(400);
     await user(new Request('https://x/api/admin-user?id=6f1c2a3e-1111-4222-8333-444455556666', { headers: { cookie } }));

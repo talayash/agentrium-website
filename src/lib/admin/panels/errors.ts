@@ -11,11 +11,13 @@ import { formatNumber, osIcon, osLabel, timeAgo } from '../format';
 import { renderDistribution, renderLineArea } from '../charts';
 import { getJson } from '../session';
 import { createPoller, type Poller } from '../poll';
+import { showToast } from '../toast';
 import type { PanelCtx } from './types';
 
 const POLL_MS = 5 * 60_000;
 const GROUP_LIMIT = 50;
 const SUMMARY_MESSAGE_CHARS = 160;
+const RESOLVE_ENDPOINT = '/api/errors-resolve';
 
 interface ErrorGroup {
   fingerprint: string;
@@ -28,6 +30,12 @@ interface ErrorGroup {
   message: string;
   stack: string | null;
   versions: string;
+  /** Set while the group is marked resolved, whether or not it has since recurred. */
+  resolved_at: string | null;
+  /** The app version the group was last seen on when it was resolved. Display only. */
+  resolved_version: string | null;
+  /** Resolved AND no occurrence since. The worker derives this on every read. */
+  resolved: boolean;
 }
 
 interface ErrorsSummary {
@@ -35,6 +43,7 @@ interface ErrorsSummary {
   total_errors?: number;
   affected_installations?: number;
   unique_fingerprints?: number;
+  unresolved_groups?: number;
   top_groups?: ErrorGroup[];
   by_source?: Array<{ source: string; count: number }>;
   by_version?: Array<{ version: string; count: number }>;
@@ -45,7 +54,11 @@ interface ErrorsSummary {
 const MARKUP = `
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
   <h2 class="admin-h2">Errors</h2>
-  <div class="flex items-center gap-2">
+  <div class="flex flex-wrap items-center gap-3">
+    <label class="text-xs text-[var(--night-text-2)] flex items-center gap-1.5 select-none">
+      <input id="err-show-resolved" type="checkbox" class="admin-check" />
+      show resolved
+    </label>
     <select id="err-days" class="admin-input text-xs">
       <option value="1">Last 24 hours</option><option value="7" selected>Last 7 days</option>
       <option value="30">Last 30 days</option><option value="90">Last 90 days</option>
@@ -53,12 +66,13 @@ const MARKUP = `
     <span id="err-status" class="admin-pill">loading…</span>
   </div>
 </div>
-<div class="grid grid-cols-3 gap-4 mb-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   <div class="admin-card p-5"><div class="admin-label">Total errors</div><div id="err-total" class="admin-big text-[#FF453A]">-</div></div>
   <div class="admin-card p-5"><div class="admin-label">Installations affected</div><div id="err-installs" class="admin-big">-</div></div>
   <div class="admin-card p-5"><div class="admin-label">Unique groups</div><div id="err-groups" class="admin-big">-</div></div>
+  <div class="admin-card p-5"><div class="admin-label">Unresolved</div><div id="err-unresolved" class="admin-big">-</div></div>
 </div>
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
   <section class="admin-card p-5"><h3 class="admin-h3">By source</h3><div id="err-by-source" class="space-y-2.5"></div></section>
   <section class="admin-card p-5"><h3 class="admin-h3">By version</h3><div id="err-by-version" class="space-y-2.5"></div></section>
   <section class="admin-card p-5"><h3 class="admin-h3">By OS</h3><div id="err-by-os" class="space-y-2.5"></div></section>
@@ -70,6 +84,7 @@ const MARKUP = `
 <section class="admin-card p-5">
   <h3 class="admin-h3">Top groups</h3>
   <div id="err-top" class="divide-y divide-[var(--night-seam)]"></div>
+  <div id="err-hidden-note" class="pt-3 text-xs text-[var(--night-text-3)]" hidden></div>
 </section>
 `;
 
@@ -105,8 +120,39 @@ function pill(label: string): HTMLElement {
   );
 }
 
+/**
+ * Marks fingerprints resolved or un-resolved. Resolving stamps a timestamp
+ * server-side; the group stays quiet only until it happens again, so this is
+ * an acknowledgement rather than a permanent mute.
+ */
+async function setResolved(fingerprints: string[], resolved: boolean): Promise<void> {
+  const res = await fetch(RESOLVE_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fingerprints, resolved }),
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+function onResolveClick(group: ErrorGroup, resolved: boolean): void {
+  void (async () => {
+    try {
+      await setResolved([group.fingerprint], resolved);
+      showToast(
+        resolved ? 'Marked resolved. It will reappear if it happens again.' : 'Moved back to unresolved.',
+        { label: 'Undo', onAction: () => onResolveClick(group, !resolved) },
+      );
+      await load();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Could not update: ${msg}`);
+    }
+  })();
+}
+
 function buildGroup(group: ErrorGroup): HTMLElement {
-  const wrap = el('details', 'py-3');
+  const wrap = el('details', `py-3 ${group.resolved ? 'admin-resolved' : ''}`);
 
   const summary = el('summary', 'cursor-pointer select-none list-none');
   const line1 = el('div', 'flex flex-wrap items-center gap-2 mb-1');
@@ -120,6 +166,30 @@ function buildGroup(group: ErrorGroup): HTMLElement {
   if (group.kind) {
     line1.appendChild(text('span', 'text-xs text-[var(--night-text-2)]', group.kind));
   }
+  if (group.resolved) {
+    line1.appendChild(text('span', 'admin-tag admin-tag-ok', 'resolved'));
+  } else if (group.resolved_at) {
+    // Resolved earlier but seen again since: the reopen is the useful signal,
+    // so it is called out rather than shown as a plain unresolved group.
+    line1.appendChild(text('span', 'admin-tag admin-tag-warn', 'reopened'));
+  }
+
+  const spacer = el('span', 'flex-1');
+  line1.appendChild(spacer);
+
+  const action = text('button', 'admin-btn-tiny', group.resolved ? 'unresolve' : 'resolve');
+  action.setAttribute('type', 'button');
+  action.title = group.resolved
+    ? 'Move back to unresolved'
+    : 'Stop notifying until this error happens again';
+  action.addEventListener('click', (event) => {
+    // Inside a <summary>, so a click would otherwise toggle the disclosure.
+    event.preventDefault();
+    event.stopPropagation();
+    onResolveClick(group, !group.resolved);
+  });
+  line1.appendChild(action);
+
   summary.appendChild(line1);
 
   const msg = String(group.message ?? '');
@@ -135,6 +205,12 @@ function buildGroup(group: ErrorGroup): HTMLElement {
   if (group.versions) meta.appendChild(text('span', '', `v${group.versions}`));
   meta.appendChild(text('span', '', `first ${timeAgo(toIsoUtc(group.first_seen))}`));
   meta.appendChild(text('span', '', `last ${timeAgo(toIsoUtc(group.last_seen))}`));
+  if (group.resolved_at) {
+    const label = group.resolved_version
+      ? `resolved ${timeAgo(toIsoUtc(group.resolved_at))} on v${group.resolved_version}`
+      : `resolved ${timeAgo(toIsoUtc(group.resolved_at))}`;
+    meta.appendChild(text('span', '', label));
+  }
   summary.appendChild(meta);
   wrap.appendChild(summary);
 
@@ -152,6 +228,7 @@ function render(data: ErrorsSummary): void {
   $('err-total').textContent = formatNumber(data.total_errors ?? 0);
   $('err-installs').textContent = formatNumber(data.affected_installations ?? 0);
   $('err-groups').textContent = formatNumber(data.unique_fingerprints ?? 0);
+  $('err-unresolved').textContent = formatNumber(data.unresolved_groups ?? 0);
 
   renderDistribution(
     $('err-by-source'),
@@ -177,9 +254,23 @@ function render(data: ErrorsSummary): void {
 
   const top = $('err-top');
   clear(top);
-  const groups = data.top_groups ?? [];
+  const all = data.top_groups ?? [];
+  const showResolved = ($('err-show-resolved') as HTMLInputElement).checked;
+  const groups = showResolved ? all : all.filter((g) => !g.resolved);
+  const hidden = all.length - groups.length;
+
+  const note = $('err-hidden-note');
+  note.hidden = hidden === 0;
+  note.textContent = hidden === 1 ? '1 resolved group hidden.' : `${formatNumber(hidden)} resolved groups hidden.`;
+
   if (groups.length === 0) {
-    top.appendChild(text('div', 'py-6 text-center text-sm text-[var(--night-text-3)]', 'No errors in this window.'));
+    top.appendChild(
+      text(
+        'div',
+        'py-6 text-center text-sm text-[var(--night-text-3)]',
+        all.length === 0 ? 'No errors in this window.' : 'Everything in this window is resolved.',
+      ),
+    );
     return;
   }
   for (const group of groups) top.appendChild(buildGroup(group));
@@ -198,6 +289,9 @@ async function load(): Promise<void> {
       ctx.onUnauthorized,
     );
     render(data);
+    // Resolving from this panel changes the badge immediately rather than
+    // waiting out the 5 minute badge poll.
+    if (currentDays() === '1') ctx.setBadge('errors', data.unresolved_groups ?? 0);
     const at = new Date().toLocaleTimeString();
     status.textContent = `ok · ${at}`;
     ctx.setRefreshed(at);
@@ -214,6 +308,9 @@ export function mount(root: HTMLElement, panelCtx: PanelCtx): void {
   ctx = panelCtx;
   root.innerHTML = MARKUP;
   $('err-days').addEventListener('change', () => {
+    refresh();
+  });
+  $('err-show-resolved').addEventListener('change', () => {
     refresh();
   });
   poller = createPoller(load, POLL_MS);
@@ -238,11 +335,13 @@ export function refresh(): void {
 export function pollBadge(ctx2: PanelCtx): Poller {
   const tick = async (): Promise<void> => {
     try {
-      const d = await getJson<{ unique_fingerprints: number }>(
+      // unresolved_groups, not unique_fingerprints: a group you have marked
+      // resolved should leave the badge, and come back on its own if it recurs.
+      const d = await getJson<{ unresolved_groups: number }>(
         '/api/errors-summary?days=1&limit=1',
         ctx2.onUnauthorized,
       );
-      ctx2.setBadge('errors', d.unique_fingerprints ?? 0);
+      ctx2.setBadge('errors', d.unresolved_groups ?? 0);
     } catch {
       // Badge is best-effort; the Errors tab itself reports load errors.
     }

@@ -69,7 +69,7 @@ const MARKUP = `
 </div>
 <section class="admin-card">
   <div class="flex items-center justify-between p-5 pb-3"><h3 class="admin-h3 mb-0">Recent accounts</h3><a href="#users" class="text-xs text-[var(--accent)]">See all</a></div>
-  <div class="overflow-x-auto"><table class="admin-table"><thead><tr><th>User</th><th>Provider</th><th>Signed up</th><th>Last seen</th><th class="num">Devices</th><th>App</th><th class="num">Profiles</th><th class="num">Workspaces</th></tr></thead><tbody id="ov-recent"></tbody></table></div>
+  <div class="admin-scroll"><table class="admin-table admin-table-sticky"><thead><tr><th>User</th><th>Provider</th><th>Signed up</th><th>Last seen</th><th class="num">Devices</th><th>App</th><th class="num">Profiles</th><th class="num">Workspaces</th></tr></thead><tbody id="ov-recent"></tbody></table></div>
 </section>
 <span id="ov-status" class="admin-pill mt-4 inline-block">loading…</span>
 `;

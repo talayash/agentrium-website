@@ -7,6 +7,15 @@
 import { $, clear, el, text } from '../dom';
 import { formatNumber, initials, osLabel, timeAgo } from '../format';
 import { getJson } from '../session';
+import {
+  USER_COLUMNS,
+  DEFAULT_SORT_STATE,
+  ariaSort,
+  nextSortState,
+  sortIndicator,
+  type SortKey,
+  type SortState,
+} from '../sort';
 import type { PanelCtx } from './types';
 
 const PAGE_SIZE = 50;
@@ -73,19 +82,18 @@ const MARKUP = `
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
   <h2 class="admin-h2">Users <span id="users-total" class="text-sm font-normal text-[var(--night-text-3)]"></span></h2>
   <div class="flex items-center gap-2">
-    <input id="users-q" type="search" placeholder="Search email or name" class="admin-input w-64" />
+    <input id="users-q" type="search" placeholder="Search email or name" class="admin-input w-full sm:w-64" />
     <span id="users-status" class="admin-pill">loading…</span>
   </div>
 </div>
-<div class="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4">
-  <div class="admin-card overflow-x-auto">
-    <table class="admin-table">
-      <thead><tr>
-        <th>User</th><th>Provider</th><th>Signed up</th><th>Last seen</th><th class="num">Devices</th>
-        <th>App</th><th>OS</th><th class="num">Profiles</th><th class="num">Workspaces</th>
-      </tr></thead>
-      <tbody id="users-rows"></tbody>
-    </table>
+<div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-4">
+  <div class="admin-card min-w-0">
+    <div class="admin-scroll">
+      <table class="admin-table admin-table-sticky">
+        <thead><tr id="users-head"></tr></thead>
+        <tbody id="users-rows"></tbody>
+      </table>
+    </div>
     <div class="p-3 text-center"><button id="users-more" type="button" class="admin-btn" hidden>Load more</button></div>
     <div id="users-empty" class="p-8 text-center text-[var(--night-text-2)]" hidden>No users match.</div>
   </div>
@@ -98,6 +106,7 @@ let query = '';
 let cursor: string | null = null;
 let loadedOnce = false;
 let searchTimer: number | null = null;
+let sortState: SortState = { ...DEFAULT_SORT_STATE };
 
 // -- Shared bits -------------------------------------------------------------
 
@@ -171,7 +180,13 @@ export function buildUserRow(
   const email = text('div', 'text-[var(--night-text)] truncate', item.email);
   email.title = item.id;
   stack.appendChild(email);
-  if (item.name) stack.appendChild(text('div', 'text-xs text-[var(--night-text-3)] truncate', item.name));
+  if (item.name) {
+    // Display names arrive in whatever script the user signed up with, so the
+    // browser infers direction per value rather than inheriting the page's LTR.
+    const name = text('div', 'text-xs text-[var(--night-text-3)] truncate', item.name);
+    name.dir = 'auto';
+    stack.appendChild(name);
+  }
   wrap.appendChild(stack);
   who.appendChild(wrap);
   tr.appendChild(who);
@@ -192,6 +207,58 @@ export function buildUserRow(
     tr.addEventListener('click', () => onSelect(item, tr));
   }
   return tr;
+}
+
+// -- Header and placeholders -------------------------------------------------
+
+/**
+ * Builds the sortable header row. Each cell is a button so the header is
+ * reachable and operable from the keyboard, and aria-sort tells a screen
+ * reader which column the list is ordered by.
+ */
+function renderHead(): void {
+  const head = $('users-head');
+  clear(head);
+  for (const col of USER_COLUMNS) {
+    const th = el('th', col.numeric ? 'num' : '');
+    th.setAttribute('aria-sort', ariaSort(sortState, col.sort));
+    const btn = el('button', 'admin-sort-btn');
+    btn.setAttribute('type', 'button');
+    btn.appendChild(text('span', '', col.label));
+    btn.appendChild(text('span', 'admin-sort-caret', sortIndicator(sortState, col.sort)));
+    const active = sortState.sort === col.sort;
+    if (active) btn.classList.add('is-active');
+    btn.setAttribute(
+      'aria-label',
+      `${col.label}, ${active ? `sorted ${ariaSort(sortState, col.sort)}, ` : ''}activate to sort`,
+    );
+    btn.addEventListener('click', () => {
+      sortState = nextSortState(sortState, col.sort);
+      renderHead();
+      cursor = null;
+      void load(false);
+    });
+    th.appendChild(btn);
+    head.appendChild(th);
+  }
+}
+
+/**
+ * Placeholder rows for the first paint. A skeleton keeps the table's height
+ * and column widths stable, so the page does not jump when real rows land.
+ */
+function renderSkeleton(): void {
+  const rows = $('users-rows');
+  clear(rows);
+  for (let r = 0; r < 6; r++) {
+    const tr = el('tr', 'admin-skeleton-row');
+    for (let c = 0; c < USER_COLUMNS.length; c++) {
+      const td = el('td', USER_COLUMNS[c].numeric ? 'num' : '');
+      td.appendChild(el('span', 'admin-skeleton'));
+      tr.appendChild(td);
+    }
+    rows.appendChild(tr);
+  }
 }
 
 // -- Detail aside ------------------------------------------------------------
@@ -224,7 +291,9 @@ function renderDetail(detail: UserDetail): void {
   const head = el('div', 'flex items-center gap-3');
   head.appendChild(avatar(user, 'w-10 h-10 text-sm'));
   const idBlock = el('div', 'min-w-0');
-  idBlock.appendChild(text('div', 'font-semibold text-[var(--night-text)] truncate', user.name || user.email));
+  const detailName = text('div', 'font-semibold text-[var(--night-text)] truncate', user.name || user.email);
+  detailName.dir = 'auto';
+  idBlock.appendChild(detailName);
   idBlock.appendChild(text('div', 'text-xs text-[var(--night-text-3)] truncate', user.email));
   head.appendChild(idBlock);
   aside.appendChild(head);
@@ -323,9 +392,16 @@ async function selectUser(item: UserItem, row: HTMLTableRowElement): Promise<voi
 
 async function load(append: boolean): Promise<void> {
   setStatus('loading…');
+  // A fresh load replaces the whole table, so a skeleton stands in for it
+  // rather than leaving the previous page's rows under a new sort.
+  if (!append) renderSkeleton();
   const url = new URL('/api/admin-users', window.location.origin);
   url.searchParams.set('limit', String(PAGE_SIZE));
+  url.searchParams.set('sort', sortState.sort);
+  url.searchParams.set('dir', sortState.dir);
   if (query) url.searchParams.set('q', query);
+  // The cursor is only valid for the ordering that issued it, so a sort or
+  // search change resets it to null before this point.
   if (append && cursor) url.searchParams.set('cursor', cursor);
 
   try {
@@ -359,6 +435,9 @@ async function load(append: boolean): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     setStatus(`error: ${msg}`, true);
     ($('users-more') as HTMLButtonElement).hidden = true;
+    // Skeleton rows are placeholders, not results: clear them so a failure
+    // never reads as an empty-but-loaded table.
+    if (!append) clear($('users-rows'));
     if ($('users-rows').childElementCount === 0) {
       const empty = $('users-empty');
       empty.textContent = `Could not load users: ${msg}`;
@@ -372,6 +451,7 @@ async function load(append: boolean): Promise<void> {
 export function mount(root: HTMLElement, panelCtx: PanelCtx): void {
   ctx = panelCtx;
   root.innerHTML = MARKUP;
+  renderHead();
 
   $('users-q').addEventListener('input', (event) => {
     query = (event.target as HTMLInputElement).value.trim();
