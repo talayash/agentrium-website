@@ -23,12 +23,34 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Fetch latest changelog from main repo
         run: |
-          curl -sL https://raw.githubusercontent.com/talayash/agentrium/master/src/changelog.json \
-            -o src/data/changelog.json
+          # -f fails the step on a 404/5xx instead of saving the error page.
+          # The download lands in a temp file so a bad response never
+          # overwrites the tracked changelog.
+          curl -fsSL https://raw.githubusercontent.com/talayash/agentrium/master/src/changelog.json \
+            -o "$RUNNER_TEMP/changelog.json"
+
+      - name: Validate downloaded changelog
+        run: |
+          node -e '
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (!Array.isArray(data) || data.length === 0) {
+              console.error("changelog is not a non-empty array");
+              process.exit(1);
+            }
+            for (const [i, entry] of data.entries()) {
+              if (!entry || typeof entry !== "object" || typeof entry.version !== "string" || !entry.version) {
+                console.error(`entry ${i} has no version field`);
+                process.exit(1);
+              }
+            }
+            console.log(`changelog ok: ${data.length} releases, latest ${data[0].version}`);
+          ' "$RUNNER_TEMP/changelog.json"
+          mv "$RUNNER_TEMP/changelog.json" src/data/changelog.json
 
       - name: Check for changes
         id: changes
