@@ -2,6 +2,7 @@
 // the /admin session cookie; the Worker token stays server-side.
 
 import { requireAdminSession, jsonResponse } from './admin-session.js';
+import { requireSameOrigin } from './same-origin.js';
 
 export const WORKER_ORIGIN = 'https://ct-analytics.claude-terminal.workers.dev';
 
@@ -11,6 +12,12 @@ export const WORKER_ORIGIN = 'https://ct-analytics.claude-terminal.workers.dev';
  *   allowParams maps a query param name to a sanitizer returning the value to forward, or null to drop it.
  */
 export async function proxyWorker(request, opts) {
+  // State-changing routes get the Origin check before anything else so a
+  // cross-site POST is refused without spending a session verification.
+  if ((opts.method ?? 'GET') === 'POST') {
+    const crossOrigin = requireSameOrigin(request);
+    if (crossOrigin) return crossOrigin;
+  }
   const denied = await requireAdminSession(request);
   if (denied) return denied;
 

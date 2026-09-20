@@ -5,6 +5,7 @@
 export const config = { runtime: 'edge' };
 
 import { issueSessionCookie, constantTimeEqual, jsonResponse } from './_lib/admin-session.js';
+import { requireSameOrigin } from './_lib/same-origin.js';
 
 const LIMITER_URL = 'https://ct-analytics.claude-terminal.workers.dev/admin/login_attempt';
 
@@ -16,6 +17,8 @@ function clientIp(request) {
 
 export default async function handler(request) {
   if (request.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405);
+  const crossOrigin = requireSameOrigin(request);
+  if (crossOrigin) return crossOrigin;
   const password = process.env.ADMIN_PASSWORD;
   const secret = process.env.ADMIN_SESSION_SECRET;
   const ctToken = process.env.CT_STATS_TOKEN;
