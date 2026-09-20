@@ -49,6 +49,10 @@ Vercel environment variables:
 
 Login is rate limited to 10 attempts per IP per 15 minutes through the Worker's KV and fails closed if the Worker is unreachable. `/stat` and `/inbox` redirect to `/admin#telemetry` and `/admin#inbox`; both require the admin session.
 
+Every response carries the hardening headers declared in `vercel.json`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` that denies camera, microphone and geolocation, `X-Frame-Options: DENY`, and a Content-Security-Policy with `frame-ancestors 'none'` whose `script-src` has no `'unsafe-inline'`. Astro is configured to emit every script as a hashed `/_astro/*.js` file so that policy holds; the build-smoke test fails if a page ever ships an inline script. The write routes (`admin-login`, `admin-logout`, `errors-resolve`, `feedback-delete`, `feedback-mark-read`) also refuse a request whose `Origin` header does not match the site host, as a second line of defence behind the `SameSite=Strict` cookie.
+
+Logout only clears the cookie in that browser. The session cookie is a signed expiry with no server-side record, so a copy taken from a compromised machine keeps working until it expires (30 days). To revoke every session at once, rotate `ADMIN_SESSION_SECRET`.
+
 ## Project Structure
 
 ```
