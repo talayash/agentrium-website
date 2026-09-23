@@ -370,20 +370,12 @@ img { max-width: 100%; display: block; }
   transform: none;
 }
 
-/* Blinking caret used by the intro and the hero terminal */
+/* Blinking caret used by the hero terminal */
 @keyframes agr-caret {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
 .agr-caret { animation: agr-caret 1.06s step-end infinite; }
-
-/* Icon spring entrance (approximates the app's Framer spring) */
-@keyframes agr-spring-in {
-  0%   { opacity: 0; transform: scale(0.55); filter: blur(14px); }
-  60%  { opacity: 1; transform: scale(1.06); filter: blur(0); }
-  80%  { transform: scale(0.98); }
-  100% { opacity: 1; transform: scale(1); filter: blur(0); }
-}
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

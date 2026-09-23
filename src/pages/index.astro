@@ -1,6 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Intro from '../components/Intro.astro';
 import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
 import Agents from '../components/Agents.astro';
@@ -34,7 +33,6 @@ await new Promise((resolve) => setTimeout(resolve, 500));
 ---
 
 <Layout title="Agentrium - every agent, one window">
-  <Intro />
   <Navbar version={version} />
   <Hero version={version} />
   <Agents />

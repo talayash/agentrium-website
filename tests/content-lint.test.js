@@ -73,11 +73,11 @@ describe('Palette discipline (Midnight Glass)', () => {
 describe('Homepage IA', () => {
   it('index.astro composes the Midnight Glass sections in order', async () => {
     const src = await readFile(join(ROOT, 'src/pages/index.astro'), 'utf8');
-    const expectedImports = ['Layout', 'Intro', 'Navbar', 'Hero', 'Agents', 'Features', 'Screenshots', 'Download', 'Footer'];
+    const expectedImports = ['Layout', 'Navbar', 'Hero', 'Agents', 'Features', 'Screenshots', 'Download', 'Footer'];
     for (const name of expectedImports) {
       expect(src, `index.astro missing import: ${name}`).toMatch(new RegExp(`import\\s+${name}\\s+from`));
     }
-    const bannedImports = ['Trust', 'Parallel', 'Compare', 'ChangelogPreview', 'CallToAction', 'TechStack'];
+    const bannedImports = ['Intro', 'Trust', 'Parallel', 'Compare', 'ChangelogPreview', 'CallToAction', 'TechStack'];
     for (const name of bannedImports) {
       expect(src, `index.astro still imports removed component: ${name}`).not.toMatch(new RegExp(`import\\s+${name}\\s+from`));
     }
@@ -105,19 +105,6 @@ describe('Load-bearing behavior', () => {
     for (const artifact of ['aarch64.dmg', 'x64.dmg', 'x64-setup.exe', 'x64_en-US.msi']) {
       expect(src, `Download.astro missing artifact ${artifact}`).toContain(artifact);
     }
-  });
-});
-
-describe('Intro splash', () => {
-  it('is session-gated and honors reduced motion', async () => {
-    const src = await readFile(join(ROOT, 'src/components/Intro.astro'), 'utf8');
-    expect(src).toMatch(/sessionStorage/);
-    expect(src).toMatch(/prefers-reduced-motion/);
-  });
-
-  it('is hidden by default so no-JS visitors never see an overlay', async () => {
-    const src = await readFile(join(ROOT, 'src/components/Intro.astro'), 'utf8');
-    expect(src).toMatch(/#agr-intro\s*\{[^}]*display:\s*none/);
   });
 });
 
