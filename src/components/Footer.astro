@@ -9,7 +9,8 @@ const buildDate = new Date().toLocaleDateString('en-GB', {
 ---
 
 <footer class="footer night-band">
-  <div class="container-wide footer-inner">
+  <div class="container-wide footer-wrap">
+  <div class="footer-inner glass-night">
     <div class="footer-brand">
       <p class="footer-wordmark">
         <img class="footer-mark" src="/icons/mark.png" alt="" width="20" height="20" decoding="async" loading="lazy" />
@@ -31,20 +32,24 @@ const buildDate = new Date().toLocaleDateString('en-GB', {
       {version && <span>v{version} &middot; </span>}built {buildDate}
     </p>
   </div>
+  </div>
 </footer>
 
 <style>
   .footer {
-    padding: 56px 0 48px;
-    border-top: 1px solid var(--night-seam);
+    padding: 8px 0 40px;
+    background: var(--night-canvas);
   }
+  .footer-wrap { position: relative; z-index: 1; }
 
   .footer-inner {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 28px;
+    gap: 22px 28px;
+    padding: 26px 30px;
+    border-radius: 30px;
   }
 
   .footer-wordmark {

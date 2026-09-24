@@ -7,14 +7,14 @@ const features = featuresJson as Feature[];
 const span = (i: number) => (i < 2 ? 'span-3' : 'span-2');
 ---
 
-<section id="features" class="section features">
+<section id="features" class="section features pastel-band">
   <div class="container-wide">
-    <p class="kicker reveal">Features</p>
+    <p class="kicker tint-light reveal">Features</p>
     <h2 class="h2 features-h2 reveal" style="--d: 60ms">Built for parallel work.</h2>
 
     <div class="bento">
       {features.map((f, i) => (
-        <article class={`bento-card ${span(i)} reveal`} style={`--d: ${(i % 3) * 80}ms`}>
+        <article class={`bento-card glass ${span(i)} reveal`} style={`--d: ${(i % 3) * 80}ms`}>
           <div class={`bento-visual visual-${f.icon}`} aria-hidden="true">
             {f.icon === 'sessions' && (
               <div class="v-sessions">
@@ -81,6 +81,7 @@ const span = (i: number) => (i < 2 ? 'span-3' : 'span-2');
 
 <style>
   .features { background: var(--page-alt); }
+  .features .kicker { display: inline-block; padding: 7px 14px; border-radius: var(--radius-pill); margin-bottom: 18px; }
 
   .features-h2 { margin-bottom: 52px; }
 
@@ -99,16 +100,13 @@ const span = (i: number) => (i < 2 ? 'span-3' : 'span-2');
   }
 
   .bento-card {
-    background: #fff;
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-card);
-    padding: 26px 24px 28px;
-    box-shadow: var(--shadow-float-sm);
+    border-radius: 28px;
+    padding: 24px 24px 28px;
     transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease-out;
   }
   .bento-card:hover {
     transform: translateY(-4px);
-    box-shadow: var(--shadow-float-md);
+    box-shadow: inset 0 1px 0 #fff, 0 4px 10px rgba(30, 40, 80, 0.08), 0 26px 56px rgba(30, 40, 80, 0.18);
   }
 
   .bento-title { margin-bottom: 8px; }
@@ -120,8 +118,9 @@ const span = (i: number) => (i < 2 ? 'span-3' : 'span-2');
     align-items: center;
     justify-content: center;
     margin-bottom: 20px;
-    border-radius: 12px;
-    background: var(--page-alt);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.55);
+    box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(30, 40, 80, 0.06);
     overflow: hidden;
   }
 

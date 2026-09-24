@@ -8,23 +8,23 @@ const screenshots = {
 };
 ---
 
-<section id="screenshots" class="section screenshots">
+<section id="screenshots" class="section screenshots pastel-band">
   <div class="container-wide">
-    <p class="kicker reveal">Screenshots</p>
+    <p class="kicker tint-light reveal">Screenshots</p>
     <h2 class="h2 screenshots-h2 reveal" style="--d: 60ms">In the wild.</h2>
     <p class="meta screenshots-note reveal" style="--d: 100ms">From the current shipping release.</p>
 
     <div class="shot-grid">
-      <figure class="shot shot-main reveal" style="--d: 120ms">
+      <figure class="shot shot-main glass reveal" style="--d: 120ms">
         <img src={`/screenshots/${screenshots.main.file}`} alt={screenshots.main.alt} loading="lazy" decoding="async" />
         <figcaption class="label">{screenshots.main.caption}</figcaption>
       </figure>
       <div class="shot-stack">
-        <figure class="shot reveal" style="--d: 220ms">
+        <figure class="shot glass reveal" style="--d: 220ms">
           <img src={`/screenshots/${screenshots.grid.file}`} alt={screenshots.grid.alt} loading="lazy" decoding="async" />
           <figcaption class="label">{screenshots.grid.caption}</figcaption>
         </figure>
-        <figure class="shot reveal" style="--d: 320ms">
+        <figure class="shot glass reveal" style="--d: 320ms">
           <img src={`/screenshots/${screenshots.settings.file}`} alt={screenshots.settings.alt} loading="lazy" decoding="async" />
           <figcaption class="label">{screenshots.settings.caption}</figcaption>
         </figure>
@@ -35,6 +35,7 @@ const screenshots = {
 
 <style>
   .screenshots { background: var(--page); }
+  .screenshots .kicker { display: inline-block; padding: 7px 14px; border-radius: var(--radius-pill); margin-bottom: 18px; }
 
   .screenshots-h2 { margin-bottom: 10px; }
   .screenshots-note { margin-bottom: 48px; }
@@ -55,17 +56,22 @@ const screenshots = {
     gap: 22px;
   }
 
-  .shot { margin: 0; }
+  /* Each screenshot sits in a glass bezel, like a floating window. */
+  .shot {
+    margin: 0;
+    padding: 8px 8px 12px;
+    border-radius: 24px;
+  }
   .shot img {
     width: 100%;
-    border-radius: 14px;
+    border-radius: 16px;
     border: 1px solid var(--frame);
-    box-shadow: var(--shadow-float-md);
+    box-shadow: 0 2px 10px rgba(10, 14, 30, 0.12);
     transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 300ms ease-out;
   }
   .shot img:hover {
-    transform: translateY(-4px) scale(1.006);
-    box-shadow: var(--shadow-float-lg);
+    transform: translateY(-3px) scale(1.006);
+    box-shadow: var(--shadow-float-md);
   }
-  .shot figcaption { margin-top: 10px; }
+  .shot figcaption { margin: 10px 6px 0; }
 </style>

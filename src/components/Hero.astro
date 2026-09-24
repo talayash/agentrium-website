@@ -11,10 +11,10 @@ const macInstaller = `${releaseBase}/Agentrium_${version}_aarch64.dmg`;
 // The mock session sidebar: one card per agent, matching the app's new
 // single-switcher IA (session cards, not tabs).
 const sessions = [
-  { name: 'api-refactor', agent: 'Claude Code', dot: '#D97757', status: 'Working', active: true },
-  { name: 'auth-hotfix', agent: 'Codex', dot: '#19C37D', status: 'Waiting on you', active: false },
-  { name: 'docs-site', agent: 'Cursor', dot: '#9B9BF7', status: 'Done', active: false },
-  { name: 'perf-sweep', agent: 'Antigravity', dot: '#4285F4', status: 'Idle', active: false },
+  { name: 'api-refactor', agent: 'Claude Code', dot: '#D97757', status: 'Working', active: true, unread: false },
+  { name: 'auth-hotfix', agent: 'Codex', dot: '#19C37D', status: 'Waiting on you', active: false, unread: true },
+  { name: 'docs-site', agent: 'Cursor', dot: '#9B9BF7', status: 'Done', active: false, unread: false },
+  { name: 'perf-sweep', agent: 'Antigravity', dot: '#4285F4', status: 'Idle', active: false, unread: false },
 ];
 ---
 
@@ -22,7 +22,10 @@ const sessions = [
   <div class="night-glow"></div>
 
   <div class="container-wide hero-inner">
-    <p class="hero-kicker reveal">v{version} &middot; macOS + Windows &middot; free and open source</p>
+    <p class="hero-kicker glass-clear reveal">
+      <span class="hero-kicker-tag tint">v{version}</span>
+      macOS + Windows &middot; free and open source
+    </p>
 
     <h1 class="display hero-h1 reveal" style="--d: 80ms">
       Every agent.<br />One window.
@@ -53,53 +56,84 @@ const sessions = [
       </a>
     </div>
 
-    <!-- Live product mockup: built from the app's real design tokens -->
-    <div class="app-window reveal" style="--d: 340ms" role="img" aria-label="The Agentrium main window: a frosted glass sidebar of session cards next to an active Claude Code terminal">
-      <div class="win-titlebar">
+    <!-- Live product mockup: the app's Liquid Glass direction A, floating
+         glass chrome over the in-app gradient with opaque terminal panes. -->
+    <div class="app-window glass-night reveal" style="--d: 340ms" role="img" aria-label="The Agentrium main window: a floating glass sidebar of session cards, a tab capsule, two terminal panes and a status capsule">
+      <aside class="win-sidebar glass-night">
         <div class="win-dots" aria-hidden="true">
           <span style="background:#FF5F57"></span>
           <span style="background:#FEBC2E"></span>
           <span style="background:#28C840"></span>
         </div>
-        <div class="win-title">Agentrium</div>
-        <div class="win-chip">
-          <span class="win-chip-pulse" aria-hidden="true"></span>Working
-        </div>
-      </div>
-
-      <div class="win-body">
-        <aside class="win-sidebar">
-          <div class="win-side-label">Sessions</div>
-          {sessions.map((s) => (
-            <div class={`win-card${s.active ? ' active' : ''}`}>
-              <span class="win-agent-dot" style={`background:${s.dot}`} aria-hidden="true"></span>
-              <span class="win-card-text">
-                <span class="win-card-name">{s.name}</span>
-                <span class="win-card-sub">{s.agent} &middot; {s.status}</span>
-              </span>
-              {s.active && <span class="win-card-stripe" aria-hidden="true"></span>}
-            </div>
-          ))}
-          <div class="win-new">+ New Session</div>
-        </aside>
-
-        <div class="win-main">
-          <div class="win-session-head">
-            <span class="win-session-name">api-refactor</span>
-            <span class="win-branch">
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878Zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm3-8.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"/></svg>
-              feat/session-store
+        <div class="win-side-label">Sessions</div>
+        {sessions.map((s) => (
+          <div class={`win-card${s.active ? ' lens' : ''}`}>
+            <span class={`win-agent-dot${s.active ? ' glow' : ''}`} style={`background:${s.dot};color:${s.dot}`} aria-hidden="true"></span>
+            <span class="win-card-text">
+              <span class="win-card-name">{s.name}</span>
+              <span class="win-card-sub">{s.agent} &middot; {s.status}</span>
             </span>
-            <span class="win-model">Claude &middot; opus</span>
+            {s.unread && <span class="win-unread" aria-hidden="true"></span>}
           </div>
+        ))}
+        <div class="win-new glass-clear">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          New Session
+        </div>
+      </aside>
 
-          <div class="win-term" id="hero-term" data-played="false">
-            <div class="term-line"><span class="term-prompt">&gt;</span> <span class="term-typed" id="term-typed"></span><span class="term-caret agr-caret" aria-hidden="true"></span></div>
-            <div class="term-out" data-line="1"><span class="term-glyph" style="color:#D97757">&#9679;</span> Reading src/store/terminalStore.ts</div>
-            <div class="term-out" data-line="2"><span class="term-glyph" style="color:#D97757">&#9679;</span> Edited terminalStore.ts <span class="term-add">+42</span> <span class="term-del">-17</span></div>
-            <div class="term-out" data-line="3"><span class="term-glyph" style="color:#28C840">&#10003;</span> 388 tests passed</div>
-            <div class="term-out term-dim" data-line="4">Session cost: $0.14 &middot; 2m 31s</div>
+      <div class="win-main">
+        <div class="win-toolbar">
+          <div class="win-tabs glass-night">
+            <span class="win-tab lens"><i style="background:#D97757"></i>api-refactor</span>
+            <span class="win-tab"><i style="background:#19C37D"></i>auth-hotfix</span>
           </div>
+          <span class="win-branch glass-clear">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="7" r="2.2"/><path d="M6 7.2v9.6M18 9.2c0 4-6 3.5-11 7"/></svg>
+            feat/session-store
+          </span>
+          <span class="win-spacer"></span>
+          <div class="win-layout glass-night" aria-hidden="true">
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></span>
+            <span class="lens"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/></svg></span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg></span>
+          </div>
+        </div>
+
+        <div class="win-panes">
+          <div class="win-pane is-focused">
+            <div class="win-pane-head">
+              <span class="win-session-name">api-refactor</span>
+              <span class="win-model">Claude &middot; opus</span>
+            </div>
+            <div class="win-term" id="hero-term" data-played="false">
+              <div class="term-line"><span class="term-prompt">&gt;</span> <span class="term-typed" id="term-typed"></span><span class="term-caret agr-caret" aria-hidden="true"></span></div>
+              <div class="term-out" data-line="1"><span class="term-glyph" style="color:#D97757">&#9679;</span> Reading src/store/terminalStore.ts</div>
+              <div class="term-out" data-line="2"><span class="term-glyph" style="color:#D97757">&#9679;</span> Edited terminalStore.ts <span class="term-add">+42</span> <span class="term-del">-17</span></div>
+              <div class="term-out" data-line="3"><span class="term-glyph" style="color:#28C840">&#10003;</span> 388 tests passed</div>
+              <div class="term-out term-dim" data-line="4">Session cost: $0.14 &middot; 2m 31s</div>
+            </div>
+          </div>
+          <div class="win-pane win-pane-2">
+            <div class="win-pane-head">
+              <span class="win-session-name">auth-hotfix</span>
+              <span class="win-model">Codex</span>
+            </div>
+            <div class="win-term">
+              <div><span class="term-prompt">&gt;</span> <span class="term-typed">fix token refresh race on resume</span></div>
+              <div><span class="term-glyph" style="color:#19C37D">&#9679;</span> Patched src-tauri/src/auth.rs</div>
+              <div><span class="term-glyph" style="color:#19C37D">&#9679;</span> Proposed 2 hunks for review</div>
+              <div class="term-typed">Apply changes? <span class="term-dim">[y/n]</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="win-status glass-night">
+          <span class="win-status-live"><span class="win-chip-pulse" aria-hidden="true"></span>2 working</span>
+          <span>1 waiting on you</span>
+          <span class="win-spacer"></span>
+          <span class="win-status-mono">$0.31 today</span>
+          <span class="win-status-keys">F1 Commands</span>
         </div>
       </div>
     </div>
@@ -118,10 +152,22 @@ const sessions = [
   .hero-inner { position: relative; z-index: 1; }
 
   .hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     font-size: 14px;
     font-weight: 500;
-    color: var(--night-text-2);
-    margin: 0 0 22px;
+    color: #D6D8E4;
+    margin: 0 0 26px;
+    padding: 6px 16px 6px 6px;
+    border-radius: var(--radius-pill);
+  }
+  .hero-kicker-tag {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-variant-numeric: tabular-nums;
   }
 
   .hero-h1 {
@@ -149,116 +195,72 @@ const sessions = [
   }
 
   /* ---------- The mock app window ---------- */
-
+  /* The frame is glass over the hero glows; its own gradient fill is what
+     the floating panels inside refract, just as the app's chrome blurs the
+     .app-root gradient rather than the desktop. */
   .app-window {
-    max-width: 980px;
+    --lg-blur: 30px;
+    max-width: 1060px;
     margin: 0 auto;
-    border-radius: 18px;
-    overflow: hidden;
+    padding: 12px;
+    border-radius: 30px;
     text-align: left;
-    background:
-      radial-gradient(700px 420px at 62% -10%, rgba(59, 82, 180, 0.42), transparent 70%),
-      radial-gradient(560px 420px at 18% 108%, rgba(122, 91, 255, 0.25), transparent 72%),
-      var(--night-0);
-    border: 1px solid var(--night-seam-strong);
-    box-shadow: var(--shadow-float-lg);
-  }
-
-  .win-titlebar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 11px 14px;
-    background: var(--glass-night);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid var(--night-seam);
-  }
-  .win-dots { display: flex; gap: 7px; }
-  .win-dots span { width: 11px; height: 11px; border-radius: 50%; display: block; }
-  .win-title {
-    flex: 1;
-    text-align: center;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--night-text-2);
-    letter-spacing: -0.01em;
-  }
-  .win-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--night-text-2);
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid var(--night-seam);
-    padding: 3px 10px;
-    border-radius: 999px;
-  }
-  .win-chip-pulse {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent);
-    animation: win-pulse 1.6s ease-in-out infinite;
-  }
-  @keyframes win-pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.5); }
-    50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0); }
-  }
-
-  .win-body {
     display: grid;
-    grid-template-columns: 232px 1fr;
-    min-height: 380px;
+    grid-template-columns: 236px 1fr;
+    gap: 12px;
+    min-height: 460px;
+    background:
+      radial-gradient(520px 360px at 70% 0%, rgba(59, 92, 230, 0.30), transparent 70%),
+      radial-gradient(460px 360px at 10% 100%, rgba(122, 91, 255, 0.24), transparent 72%),
+      rgba(20, 24, 44, 0.40);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.26),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+      var(--shadow-float-lg);
   }
-  @media (max-width: 700px) {
-    .win-body { grid-template-columns: 1fr; }
-    .win-sidebar { display: none; }
+  @media (max-width: 760px) {
+    .app-window { grid-template-columns: 1fr; border-radius: 24px; padding: 10px; }
+    .win-sidebar, .win-branch, .win-pane-2 { display: none !important; }
+  }
+  @media (max-width: 480px) {
+    .win-layout, .win-status-keys { display: none !important; }
   }
 
   .win-sidebar {
+    --lg-blur: 20px;
     padding: 14px 10px;
-    background: var(--glass-night-thin);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    backdrop-filter: blur(20px) saturate(160%);
-    border-right: 1px solid var(--night-seam);
+    border-radius: 22px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
+
+  .win-dots { display: flex; gap: 7px; padding: 2px 8px 14px; }
+  .win-dots span { width: 11px; height: 11px; border-radius: 50%; display: block; }
+
   .win-side-label {
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--night-text-3);
-    padding: 2px 8px 6px;
+    padding: 0 10px 6px;
   }
+
   .win-card {
-    position: relative;
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 9px 10px;
-    border-radius: 10px;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 16px;
     transition: background 160ms ease-out;
   }
-  .win-card:hover { background: rgba(255, 255, 255, 0.05); }
-  .win-card.active {
-    background: rgba(255, 255, 255, 0.09);
-    box-shadow: inset 0 1px 0 var(--edge-light);
-  }
-  .win-card-stripe {
-    position: absolute;
-    left: 0;
-    top: 8px;
-    bottom: 8px;
-    width: 3px;
-    border-radius: 3px;
-    background: var(--accent);
-  }
+  .win-card:not(.lens):hover { background: rgba(255, 255, 255, 0.05); }
+
   .win-agent-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .win-card-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .win-agent-dot.glow { box-shadow: 0 0 10px currentColor; }
+
+  .win-card-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
   .win-card-name {
     font-size: 12.5px;
     font-weight: 600;
@@ -272,56 +274,130 @@ const sessions = [
     color: var(--night-text-3);
     white-space: nowrap;
   }
+  .win-card.lens .win-card-sub { color: #C7C9D6; }
+
+  .win-unread {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    flex: none;
+  }
+
   .win-new {
     margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 38px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #D6D8E4;
+    border-radius: var(--radius-pill);
+  }
+
+  .win-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .win-toolbar { display: flex; align-items: center; gap: 10px; }
+  .win-spacer { flex: 1; }
+
+  .win-tabs {
+    --lg-blur: 18px;
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    border-radius: var(--radius-pill);
+  }
+  .win-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
     font-size: 12px;
     font-weight: 500;
     color: var(--night-text-2);
-    border: 1px dashed var(--night-seam-strong);
-    border-radius: 10px;
-    padding: 8px 10px;
-    text-align: center;
+    white-space: nowrap;
   }
+  .win-tab.lens { color: var(--night-text); font-weight: 600; }
+  .win-tab i { width: 6px; height: 6px; border-radius: 50%; display: block; }
 
-  .win-main { display: flex; flex-direction: column; }
-
-  .win-session-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--night-seam);
-  }
-  .win-session-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--night-text);
-  }
   .win-branch {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     font-size: 11px;
-    color: var(--night-text-2);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--night-seam);
-    padding: 2px 9px;
-    border-radius: 999px;
+    color: #C7C9D6;
+    padding: 7px 12px;
+    border-radius: var(--radius-pill);
     font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+  .win-layout {
+    --lg-blur: 18px;
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--radius-pill);
+    color: var(--night-text-2);
+  }
+  .win-layout span {
+    width: 30px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-pill);
+  }
+  .win-layout span.lens { color: var(--night-text); }
+
+  .win-panes {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 760px) { .win-panes { grid-template-columns: 1fr; } }
+
+  /* Terminal output always sits on an opaque surface, never glass. */
+  .win-pane {
+    display: flex;
+    flex-direction: column;
+    border-radius: 20px;
+    background: rgba(10, 12, 20, 0.88);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+    min-width: 0;
+  }
+  .win-pane.is-focused {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 80%, transparent),
+      0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent),
+      0 0 36px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  .win-pane-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 18px 0;
+  }
+  .win-session-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--night-text);
   }
   .win-model {
-    margin-left: auto;
     font-size: 11px;
     color: var(--night-text-3);
   }
 
   .win-term {
     flex: 1;
-    padding: 18px 20px;
+    padding: 10px 18px 16px;
     font-family: var(--font-mono);
     font-size: 12.5px;
     line-height: 2.05;
     color: var(--night-text-2);
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .term-prompt { color: #5B8DFF; }
   .term-typed { color: var(--night-text); }
@@ -341,6 +417,32 @@ const sessions = [
   .term-add { color: #28C840; }
   .term-del { color: #FF6B6B; }
   .term-dim { color: var(--night-text-3); font-size: 11.5px; }
+
+  .win-status {
+    --lg-blur: 18px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 34px;
+    padding: 0 16px;
+    border-radius: var(--radius-pill);
+    font-size: 11.5px;
+    color: var(--night-text-2);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .win-status-live { display: inline-flex; align-items: center; gap: 7px; color: var(--night-text); }
+  .win-status-mono { font-family: var(--font-mono); }
+
+  .win-chip-pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: win-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes win-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.5); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0); }
+  }
 
   /* Soft fade from the night hero into the light page below */
   .hero-fade {

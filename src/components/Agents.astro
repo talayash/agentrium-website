@@ -29,9 +29,9 @@ const agents = [
 ];
 ---
 
-<section id="agents" class="section agents">
+<section id="agents" class="section agents pastel-band">
   <div class="container-wide">
-    <p class="kicker reveal">Agents</p>
+    <p class="kicker tint-light reveal">Agents</p>
     <h2 class="h2 agents-h2 reveal" style="--d: 60ms">
       Four agents.<br />Pick per session.
     </h2>
@@ -43,9 +43,11 @@ const agents = [
     <div class="agents-grid">
       {agents.map((a, i) => (
         <div class="agent-card glass reveal" style={`--d: ${i * 70}ms`}>
-          <span class="agent-dot" style={`background:${a.dot}`} aria-hidden="true"></span>
+          <div class="agent-top">
+            <span class="agent-swatch" style={`background:${a.dot};color:${a.dot}`} aria-hidden="true"></span>
+            <code class="agent-binary lens-light">$ {a.binary}</code>
+          </div>
           <h3 class="h3 agent-name">{a.name}</h3>
-          <code class="agent-binary">$ {a.binary}</code>
           <p class="body-sm agent-blurb">{a.blurb}</p>
         </div>
       ))}
@@ -60,6 +62,7 @@ const agents = [
 
 <style>
   .agents { background: var(--page); }
+  .agents .kicker { display: inline-block; padding: 7px 14px; border-radius: var(--radius-pill); margin-bottom: 18px; }
 
   .agents-h2 { margin-bottom: 18px; }
   .agents-sub { max-width: 52ch; margin-bottom: 56px; }
@@ -73,30 +76,39 @@ const agents = [
   @media (max-width: 559px) { .agents-grid { grid-template-columns: 1fr; } }
 
   .agent-card {
-    border-radius: var(--radius-card);
-    padding: 26px 22px;
+    border-radius: 26px;
+    padding: 24px;
     transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease-out;
   }
   .agent-card:hover {
     transform: translateY(-4px);
-    box-shadow: inset 0 1px 0 var(--edge-light-bright), var(--shadow-float-md);
+    box-shadow: inset 0 1px 0 #fff, 0 4px 10px rgba(30, 40, 80, 0.08), 0 26px 56px rgba(30, 40, 80, 0.18);
   }
 
-  .agent-dot {
-    display: block;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin-bottom: 16px;
-    box-shadow: 0 0 12px 1px currentColor;
+  .agent-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
   }
-  .agent-name { margin-bottom: 6px; }
+  /* A glossy app-icon swatch in the agent's brand colour. */
+  .agent-swatch {
+    display: block;
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+      0 6px 18px color-mix(in srgb, currentColor 45%, transparent);
+  }
+  .agent-name { margin-bottom: 8px; }
   .agent-binary {
-    display: inline-block;
     font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--muted-label);
-    margin-bottom: 12px;
+    color: var(--muted-body);
+    padding: 5px 10px;
+    border-radius: var(--radius-pill);
   }
   .agent-blurb { margin: 0; }
 

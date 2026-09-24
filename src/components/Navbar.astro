@@ -23,7 +23,7 @@ const { version } = Astro.props;
       <a href="/#screenshots">Screenshots</a>
       <a href="/changelog">Changelog</a>
       <a href="https://github.com/talayash/agentrium" target="_blank" rel="noopener noreferrer">GitHub</a>
-      <a href="/#download" class="nav-cta">Download</a>
+      <a href="/#download" class="nav-cta tint">Download</a>
     </div>
   </nav>
 </header>
@@ -43,6 +43,10 @@ const { version } = Astro.props;
 
   .nav {
     pointer-events: auto;
+    --lg-blur: 28px;
+    /* Dark-tinted glass: the nav floats over both the Midnight hero and the
+       light sections, so its fill must keep light text readable on either. */
+    background: rgba(14, 17, 30, 0.82);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -91,14 +95,16 @@ const { version } = Astro.props;
     color: var(--night-text);
     background: rgba(255, 255, 255, 0.08);
   }
+  /* Scroll-spy: the link for the section in view wears the glass lens. */
+  .nav-links a.lens,
+  .nav-links a.lens:hover { color: var(--night-text); background: rgba(255, 255, 255, 0.17); }
   .nav-links a.nav-cta {
     color: #fff;
-    background: var(--accent);
     font-weight: 600;
     padding: 7px 16px;
     margin-left: 4px;
   }
-  .nav-links a.nav-cta:hover { background: #2492FF; }
+  .nav-links a.nav-cta:hover { background: color-mix(in srgb, var(--accent) 88%, #fff); }
 
   .nav-burger {
     display: none;
@@ -150,4 +156,31 @@ const { version } = Astro.props;
       burger?.setAttribute('aria-expanded', 'false');
     })
   );
+
+  // Scroll-spy: mark the link whose section is in view with the lens
+  // material. Only on the homepage, where the anchors exist.
+  const spyLinks = Array.from(links?.querySelectorAll<HTMLAnchorElement>('a[href^="/#"]') ?? [])
+    .filter((a) => !a.classList.contains('nav-cta'));
+  // #download is observed too: the Download CTA already stands for it, so
+  // reaching it clears the lens instead of leaving the previous link lit.
+  const spyTargets = [...spyLinks.map((a) => a.getAttribute('href')!.slice(2)), 'download']
+    .map((id) => document.getElementById(id))
+    .filter((el): el is HTMLElement => el !== null);
+  if (spyTargets.length) {
+    const spy = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          spyLinks.forEach((a) => {
+            const on = a.getAttribute('href') === `/#${e.target.id}`;
+            a.classList.toggle('lens', on);
+            if (on) a.setAttribute('aria-current', 'location');
+            else a.removeAttribute('aria-current');
+          });
+        }
+      },
+      { rootMargin: '-45% 0px -50% 0px' }
+    );
+    spyTargets.forEach((t) => spy.observe(t));
+  }
 </script>
